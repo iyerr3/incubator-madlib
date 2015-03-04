@@ -1082,6 +1082,31 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.forest_train(
 $$ LANGUAGE sql VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
 
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.forest_train(
+    training_table_name         TEXT,
+    output_table_name           TEXT,
+    id_col_name                 TEXT,
+    dependent_variable          TEXT,
+    list_of_features            TEXT,
+    list_of_features_to_exclude TEXT,
+    grouping_cols               TEXT,
+    num_trees                   integer,
+    num_random_features         integer,
+    importance                  boolean,
+    num_permutations            integer,
+    max_tree_depth              integer,
+    min_split                   integer,
+    min_bucket                  integer,
+    num_splits                  integer,
+    surrogate_params            TEXT,
+    verbose                     boolean,
+    sample_ratio                float8
+) RETURNS VOID AS $$
+    SELECT MADLIB_SCHEMA.forest_train($1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15, $16, $17);
+$$ LANGUAGE sql VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+
 
 CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.forest_train(
     message     TEXT
