@@ -1573,3 +1573,29 @@ AS $$
 $$
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `READS SQL DATA', `');
 
+-------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.kmeanspp(
+    rel_source VARCHAR,
+    expr_point VARCHAR,
+    k INTEGER,
+    fn_dist VARCHAR /*+ DEFAULT 'squared_dist_norm2' */,
+    agg_centroid VARCHAR /*+ DEFAULT 'avg' */,
+    max_num_iterations INTEGER /*+ DEFAULT 20 */,
+    min_frac_reassigned DOUBLE PRECISION /*+ DEFAULT 0.001 */,
+    seeding_sample_ratio DOUBLE PRECISION  /*+ DEFAULT 1.0 */
+) RETURNS MADLIB_SCHEMA.kmeans_result
+VOLATILE
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    ret MADLIB_SCHEMA.kmeans_result;
+BEGIN
+    ret = MADLIB_SCHEMA.kmeans(
+        $1, $2,
+        MADLIB_SCHEMA.kmeanspp_seeding($1, $2, $3, $4),
+        $4, $5, $6, $7);
+    RETURN ret;
+END
+$$
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+-------------------------------------------------------------------------
