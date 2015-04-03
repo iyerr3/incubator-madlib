@@ -71,16 +71,18 @@ correlation_merge_states::run(AnyType& args) {
 
 AnyType
 correlation_final::run(AnyType& args) {
-    MutableNativeMatrix state = args[0].getAs<MutableNativeMatrix>();
+    MutableNativeMatrix covariance = args[0].getAs<MutableNativeMatrix>();
 
-    Matrix denom(state.rows(), state.cols());
-    ColumnVector sqrt_of_diag = state.diagonal().cwiseSqrt();
+    Matrix denom(covariance.rows(), covariance.cols());
+    ColumnVector sqrt_of_diag = covariance.diagonal().cwiseSqrt();
     triangularView<Upper>(denom) = sqrt_of_diag * trans(sqrt_of_diag);
 
-    triangularView<Upper>(state) = state.cwiseQuotient(denom);
-    state.diagonal().setOnes();
+    // correlation = cov(x, y) / (s(x) s(y))  , where s is std. deviation
+    triangularView<Upper>(covariance) = covariance.cwiseQuotient(denom);
 
-    return state;
+    // we explicitly set diagonal to one to eliminate precision issues
+    covariance.diagonal().setOnes();
+    return covariance;
 }
 
 } // stats

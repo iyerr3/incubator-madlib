@@ -38,12 +38,30 @@ with the \f$ (ij) \f$th element equal to the correlation coefficient between the
 \f$i\f$th and the \f$j\f$th variable. The diagonal elements (correlations of
 variables with themselves) are always equal to 1.0.
 
+We also provide a function to compute the covariance matrix.
+The covariance matrix is similar to the Pearson's correlation matrix, except it
+is not normalized by the standard deviation of the individial variables.
+
+\f[
+Cov (X, Y) = \rho (X, Y) * \sigma(X) * \sigma(Y),
+\f]
+
+where \f$\sigma(X)\f$ is the standard deviation of \f$X\f$ and \f$Cov (X, Y)\f$ is
+the covariance of \f$X\f$ and \f$Y\f$.
+
+
 @anchor usage
 @par Correlation Function
 
-The correlation function has the following syntax:
+The correlation and covariance functions have the following syntax:
 <pre class="syntax">
 correlation( source_table,
+             output_table,
+             target_cols,
+             verbose
+           )
+
+covariance( source_table,
              output_table,
              target_cols,
              verbose
@@ -56,7 +74,7 @@ correlation( source_table,
 <dd>TEXT. The name of the data containing the input data.</dd>
 
 <dt>output_table</dt>
-<dd>TEXT. The name of the table where the cross-correlation matrix will be saved.
+<dd>TEXT. The name of the table where the cross-correlation/covariance matrix will be saved.
 The output is a table with N+2 columns and N rows, where N is the number of
 target columns. It contains the following columns.
 <table class="output">
@@ -70,17 +88,19 @@ target columns. It contains the following columns.
 </tr>
 <tr>
 <th><...></th>
-<td>The remainder of the table is the NxN correlation matrix for the pairs of
+<td>The remainder of the table is the NxN correlation/covariance matrix for the pairs of
 numeric 'source_table' columns.</td>
 </tr>
 </table>
 The output table is arranged as a lower-triangular matrix with the upper
-triangle set to NULL and the diagonal elements set to 1.0. To obtain the result
-from the '<em>output_table</em>' in this matrix format ensure to order the
-elements using the '<em>column_position</em>', as shown in the example below.
+triangle set to NULL. To obtain the result
+from the '<em>output_table</em>' in this matrix format, make sure to order the
+elements using '<em><b>column_position</b></em>', as shown in the example below.
+<b>
 <pre class="example">
 SELECT * FROM output_table ORDER BY column_position;
 </pre>
+</b>
 
 In addition to output table, a summary table named \<output_table\>_summary
 is also created at the same time, which has the following columns:
@@ -177,8 +197,9 @@ Result:
 </pre>
 
 @par Notes
-Current implementation ignores a row that contains NULL entirely. This means
-any correlation in such a row (with NULLs) does not contribute to the final answer.
+Current implementation ignores any row in entirety if it contains a NULL.
+This means any contribution from the non-NULL parts of the row to the corresponding
+correlation is not included in the final answer.
 
 @anchor related
 @par Related Topics
@@ -303,6 +324,77 @@ m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
 -----------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.correlation()
+RETURNS text AS $$
+    PythonFunctionBodyOnly(`stats', `correlation')
+    return correlation.correlation_help_message(schema_madlib, None)
+$$ LANGUAGE plpythonu IMMUTABLE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
+-------------------------------------------------------------------------
+
+-----------------------------------------------------------------------
+-- Main function for covariance
+-----------------------------------------------------------------------
+/* @brief Compute a covariance matrix for a table with optional target columns specified
+
+   @param source_table Name of source relation containing the data
+   @param output_table Name of output table name to store the correlation
+   @param target_cols  String with comma separated list of columns for which covariance is desired
+   @param verbose      Flag to determine verbosity
+
+   @usage
+   <pre> SELECT MADLIB_SCHEMA.covariance (
+         '<em>source_table</em>',
+         '<em>output_table</em>',
+         '<em>target_cols</em>'
+     );
+     SELECT * FROM '<em>output_table</em>' ORDER BY '<em>colum_position</em>';
+   </pre>
+*/
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.correlation(
+    source_table varchar, --  input table name
+    output_table varchar, -- output table name
+    target_cols  varchar, -- comma separated list of output cols (default = '*')
+    verbose      boolean  -- flag to determine verbosity
+) RETURNS MADLIB_SCHEMA.correlation_result AS $$
+    PythonFunction(stats, correlation, correlation)
+$$ LANGUAGE plpythonu VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+
+-----------------------------------------------------------------------
+-- Overloaded functions
+-----------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.covariance(
+    source_table varchar, --  input table name
+    output_table varchar, -- output table name
+    target_cols  varchar  -- comma separated list of output cols (default = '*')
+)
+RETURNS MADLIB_SCHEMA.correlation_result AS $$
+    select MADLIB_SCHEMA.covariance($1, $2, $3, FALSE)
+$$ LANGUAGE sql VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+
+-----------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.covariance(
+    source_table varchar, --  input table name
+    output_table varchar  -- output table name
+) RETURNS MADLIB_SCHEMA.correlation_result AS $$
+    select MADLIB_SCHEMA.covariance($1, $2, NULL)
+$$ LANGUAGE sql VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+
+-----------------------------------------------------------------------
+-- Help functions
+-----------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.covariance(
+    input_message       text
+) RETURNS TEXT AS $$
+    PythonFunctionBodyOnly(`stats', `correlation')
+    return correlation.correlation_help_message(schema_madlib, input_message)
+$$ LANGUAGE plpythonu IMMUTABLE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
+
+-----------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.covariance()
 RETURNS text AS $$
     PythonFunctionBodyOnly(`stats', `correlation')
     return correlation.correlation_help_message(schema_madlib, None)
