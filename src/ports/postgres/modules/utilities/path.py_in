@@ -35,24 +35,37 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     symbol_str = _build_symbol_str(symbol_expr)
     _validate(source_table, output_table, partition_expr, order_expr,
               pattern_regex, symbol_str, result_fun)
-    input_view = unique_string()
+    input_view = unique_string('input_view')
+    id_col_name = unique_string('id_col')
+    seq_gen = unique_string('seq_gen')
 
     sql = """
-        CREATE TABLE {output_table} as
-        WITH {input_view} as (
-            select *,
+        CREATE SEQUENCE {seq_gen};
+        CREATE VIEW {input_view} as (
+            select
+                *,
+                nextval('{seq_gen}') as {id_col_name},
                 case
                     {symbol_str}
                 end as symbol
             FROM {source_table}
-        )
-        SELECT
-            {partition_expr},
-            {result_fun}
-        FROM {input_view}
-        GROUP BY {partition_expr}
-        HAVING
-            array_to_string(array_agg(symbol ORDER BY {order_expr}), '') ~* '^{pattern_regex}'
+        );
+        CREATE TABLE {output_table} as
+        {result_fun}
+        SELECT *
+        FROM {input_view} as q1,
+            ( SELECT
+                {partition_expr},
+                length(substring(array_to_string(array_agg(symbol ORDER BY {order_expr}), ''),
+                                 FROM '(?i)(^.*){pattern_regex}'),
+                array_agg({id_col_name})
+              FROM {input_view}
+              GROUP BY {partition_expr}
+              HAVING
+                array_to_string(
+                    array_agg(symbol ORDER BY {order_expr}), '') ~* '{pattern_regex}'
+            ) q2
+        WHERE q1.{partition_expr} = q2.{partition_expr}
     """.format(**locals())
     plpy.execute(sql)
 # ------------------------------------------------------------------------------
