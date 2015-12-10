@@ -17,7 +17,8 @@ from validate_args import output_tbl_valid
 
 
 def path(schema_madlib, source_table, output_table, partition_expr,
-         order_expr, pattern_regex, symbol_expr, result_fun, **kwargs):
+         order_expr, pattern_regex, symbol_expr, result_fun,
+         persist_rows=False, **kwargs):
     """
         Perform regular pattern matching over a sequence of rows.
 
@@ -37,12 +38,14 @@ def path(schema_madlib, source_table, output_table, partition_expr,
               pattern_regex, symbol_str, result_fun)
     input_view = unique_string('input_view')
     matched_view = unique_string('matched_view')
+    matched_rows = unique_string('matched_rows')
+    table_or_view = 'TABLE' if persist_rows else 'VIEW'
     id_col_name = unique_string('id_col')
     seq_gen = unique_string('seq_gen')
 
     sql = """
         CREATE SEQUENCE {seq_gen};
-        CREATE TABLE {output_table} AS (
+        CREATE {table_or_view} {matched_rows} AS (
             WITH
             {input_view} AS (
                 SELECT
@@ -59,21 +62,33 @@ def path(schema_madlib, source_table, output_table, partition_expr,
                     {input_view} as q1,
                     (
                      SELECT
-                        {partition_expr},
-                        length(substring(array_to_string(
-                                    array_agg(symbol ORDER BY {order_expr}), '')
-                            FROM '(?i)(^.*){pattern_regex}')) as match_position,
-                        array_agg({id_col_name}) as match_ids
-                     FROM {input_view}
-                     GROUP BY {partition_expr}
-                     HAVING
-                        array_to_string(array_agg(symbol ORDER BY {order_expr}), '')
-                            ~* '{pattern_regex}'
+                        unnest(match_ids[match_position+1:match_position+match_length+1]) as match_ids
+                     FROM(
+                         SELECT
+                            {partition_expr},
+                            length(substring(array_to_string(
+                                        array_agg(symbol ORDER BY {order_expr}), '')
+                                   FROM '(?i)(^.*){pattern_regex}')) as match_position,
+                            length(substring(array_to_string(
+                                        array_agg(symbol ORDER BY {order_expr}), '')
+                                   FROM '(?i)^.*({pattern_regex}).*$')) as match_length,
+                            array_agg({id_col_name}) as match_ids
+                         FROM {input_view}
+                         GROUP BY {partition_expr}
+                         HAVING
+                            array_to_string(array_agg(symbol ORDER BY {order_expr}), '')
+                                ~* '{pattern_regex}'
+                     ) subq
                     ) q2
-                WHERE q1.{partition_expr} = q2.{partition_expr}
+                WHERE q1.{id_col_name} = q2.match_ids
             )
             SELECT * FROM {matched_view}
-        )
+        );
+       CREATE TABLE {output_table} AS
+           SELECT {result_fun}
+           FROM {matched_rows}
+           GROUP BY {partition_expr}
+           ORDER BY {order_expr};
     """.format(**locals())
     plpy.info(sql)
     plpy.execute(sql)
