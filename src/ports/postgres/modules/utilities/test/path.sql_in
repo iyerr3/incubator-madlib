@@ -52,10 +52,9 @@ INSERT INTO weblog VALUES
 /*
 SELECT * FROM weblog ORDER BY event_timestamp ASC;
 */
-
 SELECT madlib.path(
      'weblog',              -- Name of the table
-     'path_output',         -- Table name to store the path results
+     '"Path_output"',         -- Table name to store the path results
      'user_id',             -- Partition expression to group the data table
      'event_timestamp ASC',         -- Order expression to sort the tuples of the data table
      'I(click){1}(CONV){1}',        -- Definition of the path pattern to search for
@@ -65,4 +64,4 @@ SELECT madlib.path(
      );
 ------------------------------------------------------------
 
-SELECT * FROM path_output;
+SELECT * FROM "Path_output";

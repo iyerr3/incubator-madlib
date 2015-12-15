@@ -106,6 +106,7 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     plpy.execute(output_sql)
     if not persist_rows:
         plpy.execute("DROP VIEW IF EXISTS {0} CASCADE".format(matched_rows))
+    plpy.execute("DROP SEQUENCE IF EXISTS " + seq_gen)
 # ------------------------------------------------------------------------------
 
 
