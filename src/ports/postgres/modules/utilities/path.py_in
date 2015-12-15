@@ -93,7 +93,6 @@ def path(schema_madlib, source_table, output_table, partition_expr,
                 ) q2
             WHERE q1.{id_col_name} = q2.match_ids
         );
-        ALTER SEQUENCE {seq_gen} OWNED BY {matched_rows};
     """.format(**locals())
     plpy.execute(build_matched_rows)
     output_sql = """
@@ -107,8 +106,6 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     plpy.execute(output_sql)
     if not persist_rows:
         plpy.execute("DROP VIEW IF EXISTS {0} CASCADE".format(matched_rows))
-    plpy.execute("DROP VIEW IF EXISTS {0}".format(input_view))
-
 # ------------------------------------------------------------------------------
 
 
