@@ -20,7 +20,7 @@ from validate_args import output_tbl_valid
 
 
 def path(schema_madlib, source_table, output_table, partition_expr,
-         order_expr, pattern_expr, symbol_expr, result_fun,
+         order_expr, pattern_expr, symbol_expr, agg_func,
          persist_rows=False, **kwargs):
     """
         Perform regular pattern matching over a sequence of rows.
@@ -33,7 +33,7 @@ def path(schema_madlib, source_table, output_table, partition_expr,
         @param order_expr: str, Expression to order the input data
         @param pattern_expr: str, Expression to define the pattern to search for
         @param symbol_expr: str, Definition for each symbol, comma-separated list
-        @param result_fun: str, List of the result functions/aggregates to apply on matched patterns
+        @param agg_func: str, List of the result functions/aggregates to apply on matched patterns
 
     """
     sym_mapping, sym_str = _parse_symbol_str(symbol_expr)
@@ -46,7 +46,7 @@ def path(schema_madlib, source_table, output_table, partition_expr,
         lambda m: sym_mapping[re.escape(string.lower(m.group(0)))],
         pattern_expr)
     _validate(source_table, output_table, partition_expr, order_expr,
-              pattern_expr, sym_str, result_fun, persist_rows)
+              pattern_expr, sym_str, agg_func, persist_rows)
     input_view = unique_string('input_view')
     matched_view = unique_string('matched_view')
     matched_rows = add_postfix(output_table, "_rows") if persist_rows else unique_string('matched_rows')
@@ -55,8 +55,8 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     seq_gen = unique_string('seq_gen')
     all_input_cols_str = ', '.join(get_cols(source_table, schema_madlib))
 
+    plpy.execute("CREATE SEQUENCE {0}".format(seq_gen))
     build_matched_rows = """
-        CREATE SEQUENCE {seq_gen};
         CREATE {table_or_view} {matched_rows} AS (
             WITH
             {input_view} AS (
@@ -93,27 +93,27 @@ def path(schema_madlib, source_table, output_table, partition_expr,
                 ) q2
             WHERE q1.{id_col_name} = q2.match_ids
         );
+        ALTER SEQUENCE {seq_gen} OWNED BY {matched_rows};
     """.format(**locals())
     plpy.execute(build_matched_rows)
     output_sql = """
         CREATE TABLE {output_table} AS
            SELECT
             {partition_expr},
-            {result_fun}
+            {agg_func}
            FROM {matched_rows}
            GROUP BY {partition_expr}
         """.format(**locals())
     plpy.execute(output_sql)
     if not persist_rows:
-        plpy.execute("DROP VIEW IF EXISTS {0}".format(matched_rows))
-        plpy.execute("DROP SEQUENCE " + seq_gen)
+        plpy.execute("DROP VIEW IF EXISTS {0} CASCADE".format(matched_rows))
     plpy.execute("DROP VIEW IF EXISTS {0}".format(input_view))
 
 # ------------------------------------------------------------------------------
 
 
 def _validate(source_table, output_table, partition_expr, order_expr,
-              pattern_expr, symbol_expr, result_fun, persist_rows):
+              pattern_expr, symbol_expr, agg_func, persist_rows):
     input_tbl_valid(source_table, 'Path')
     output_tbl_valid(output_table, 'Path')
     if persist_rows:
@@ -124,7 +124,7 @@ def _validate(source_table, output_table, partition_expr, order_expr,
     _assert(order_expr, "Path error: Invalid order expression")
     _assert(pattern_expr, "Path error: Invalid pattern expression")
     _assert(symbol_expr, "Path error: Invalid symbol expression")
-    _assert(result_fun, "Path error: Invalid result expression")
+    _assert(agg_func, "Path error: Invalid result expression")
 # ----------------------------------------------------------------------
 
 
@@ -196,7 +196,8 @@ SELECT {schema_madlib}.path(
     'order_expr',      -- Order expression to sort the tuples of the data table
     'pattern_def',     -- Definition of the path pattern to search for
     'symbol_def',      -- Definition of various symbols used in the pattern definition
-    'result_fun',      -- Aggregate/window functions to be applied on the matched paths
+    'agg_func',        -- Aggregate/window functions to be applied on the matched paths
+    persist_rows       -- Boolean indicating whether to persist the matched rows in a table
 );
 """
     return help_string.format(schema_madlib=schema_madlib)
