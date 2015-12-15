@@ -36,17 +36,17 @@ def path(schema_madlib, source_table, output_table, partition_expr,
         @param agg_func: str, List of the result functions/aggregates to apply on matched patterns
 
     """
-    sym_mapping, sym_str = _parse_symbol_str(symbol_expr)
+    _validate(source_table, output_table, partition_expr, order_expr,
+              pattern_expr, symbol_expr, agg_func, persist_rows)
     # replace each occurence of the original symbol with the new
     # perform this operation in descending order of length to avoid substituting
     # subset of any symbol
+    sym_mapping, sym_str = _parse_symbol_str(symbol_expr)
     old_sym_desc = list(reversed(sorted(sym_mapping.keys(), key=len)))
     replace_pattern = re.compile('|'.join(old_sym_desc), re.IGNORECASE)
     pattern_expr = replace_pattern.sub(
         lambda m: sym_mapping[re.escape(string.lower(m.group(0)))],
         pattern_expr)
-    _validate(source_table, output_table, partition_expr, order_expr,
-              pattern_expr, sym_str, agg_func, persist_rows)
     input_view = unique_string('input_view')
     matched_view = unique_string('matched_view')
     matched_rows = add_postfix(output_table, "_rows") if persist_rows else unique_string('matched_rows')
@@ -157,12 +157,15 @@ def _parse_symbol_str(symbol_expr):
         each_sym_splits = each_sym.split(":=")
         if len(each_sym_splits) == 2:
             old_sym, sym_def = each_sym_splits
+            old_sym = re.escape(old_sym.strip().lower())
             try:
                 next_sym = all_symbols.next()
             except StopIteration:
                 plpy.error("Path error: Maximum number of symbols reached.")
-            symbol_mapping[re.escape(old_sym.strip().lower())] = next_sym
-            symbol_definitions[next_sym] = sym_def.strip()
+            _assert(old_sym not in symbol_mapping,
+                    "Path error: Multipe definitions of a symbol")
+            symbol_mapping[old_sym] = next_sym
+            symbol_definitions[next_sym] = sym_def
     return (symbol_mapping,
             '\n'.join("WHEN {1} THEN '{0}'::text".format(key, val)
                       for key, val in symbol_definitions.items()))
@@ -194,7 +197,7 @@ SELECT {schema_madlib}.path(
     'pattern_def',     -- Definition of the path pattern to search for
     'symbol_def',      -- Definition of various symbols used in the pattern definition
     'agg_func',        -- Aggregate/window functions to be applied on the matched paths
-    persist_rows       -- Boolean indicating whether to persist the matched rows in a table
+    persist_rows       -- Boolean indicating whether to output the matched rows in a table
 );
 """
     return help_string.format(schema_madlib=schema_madlib)
