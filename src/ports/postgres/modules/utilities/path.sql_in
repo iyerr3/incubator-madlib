@@ -179,7 +179,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.path(
     output_table        VARCHAR,
     partition_expr      VARCHAR,
     order_expr          VARCHAR,
-    pattern_regex       VARCHAR,
+    pattern_expr        VARCHAR,
     symbol_expr         VARCHAR,
     result_fun          VARCHAR,
     persist_rows        BOOLEAN
@@ -196,7 +196,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.path(
     output_table        VARCHAR,
     partition_expr      VARCHAR,
     order_expr          VARCHAR,
-    pattern_regex       VARCHAR,
+    pattern_expr        VARCHAR,
     symbol_expr         VARCHAR,
     result_fun          VARCHAR
 ) RETURNS void AS $$
