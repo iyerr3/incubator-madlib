@@ -56,8 +56,8 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     all_input_cols_str = ', '.join(get_cols(source_table, schema_madlib))
 
     # build a new input temp table that contains a sequence
+    plpy.execute("CREATE SEQUENCE " + seq_gen)
     plpy.execute("""
-                 CREATE SEQUENCE {seq_gen};
                  CREATE TEMP TABLE {input_with_id} AS (
                      SELECT
                         *,
