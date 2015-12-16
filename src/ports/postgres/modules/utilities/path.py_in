@@ -47,7 +47,7 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     pattern_expr = replace_pattern.sub(
         lambda m: sym_mapping[re.escape(string.lower(m.group(0)))],
         pattern_expr)
-    input_view = unique_string('input_view')
+    input_with_id = unique_string('input_with_id')
     matched_view = unique_string('matched_view')
     matched_rows = add_postfix(output_table, "_rows") if persist_rows else unique_string('matched_rows')
     table_or_view = 'TABLE' if persist_rows else 'VIEW'
@@ -55,22 +55,23 @@ def path(schema_madlib, source_table, output_table, partition_expr,
     seq_gen = unique_string('seq_gen')
     all_input_cols_str = ', '.join(get_cols(source_table, schema_madlib))
 
-    plpy.execute("CREATE SEQUENCE {0}".format(seq_gen))
+    # build a new input temp table that contains a sequence
+    plpy.execute("""
+                 CREATE SEQUENCE {seq_gen};
+                 CREATE TEMP TABLE {input_with_id} AS (
+                     SELECT
+                        *,
+                        nextval('{seq_gen}') AS {id_col_name},
+                        CASE
+                            {sym_str}
+                        END AS symbol
+                     FROM {source_table}
+                 )""".format(**locals()))
     build_matched_rows = """
         CREATE {table_or_view} {matched_rows} AS (
-            WITH
-            {input_view} AS (
-                SELECT
-                    *,
-                    nextval('{seq_gen}') AS {id_col_name},
-                    CASE
-                        {sym_str}
-                    END AS symbol
-                FROM {source_table}
-            )
             SELECT {all_input_cols_str}
             FROM
-                {input_view} as q1,
+                {input_with_id} as q1,
                 (
                  SELECT
                     unnest(match_ids[match_position+1:match_position+match_length]) as match_ids
@@ -84,7 +85,7 @@ def path(schema_madlib, source_table, output_table, partition_expr,
                                     array_agg(symbol ORDER BY {order_expr}), '')
                                FROM '(?i)^.*({pattern_expr}).*$')) as match_length,
                         array_agg({id_col_name} ORDER BY {order_expr}) as match_ids
-                     FROM {input_view}
+                     FROM {input_with_id}
                      GROUP BY {partition_expr}
                      HAVING
                         array_to_string(array_agg(symbol ORDER BY {order_expr}), '')
@@ -95,17 +96,17 @@ def path(schema_madlib, source_table, output_table, partition_expr,
         );
     """.format(**locals())
     plpy.execute(build_matched_rows)
-    output_sql = """
+    plpy.execute("""
         CREATE TABLE {output_table} AS
            SELECT
             {partition_expr},
             {agg_func}
            FROM {matched_rows}
            GROUP BY {partition_expr}
-        """.format(**locals())
-    plpy.execute(output_sql)
+        """.format(**locals()))
     if not persist_rows:
-        plpy.execute("DROP VIEW IF EXISTS {0} CASCADE".format(matched_rows))
+        plpy.execute("DROP VIEW IF EXISTS " + matched_rows)
+    plpy.execute("DROP TABLE IF EXISTS " + input_with_id)
     plpy.execute("DROP SEQUENCE IF EXISTS " + seq_gen)
 # ------------------------------------------------------------------------------
 
