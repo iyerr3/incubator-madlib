@@ -201,8 +201,8 @@ Result:
 <pre class="result">
  column_position |  variable   |    temperature    | humidity
 -----------------+-------------+-------------------+----------
-               1 | temperature |  0|
-               2 | humidity    |  0|      0
+               1 | temperature |      146.25       |
+               2 | humidity    |      82.125       | 121.1875
 (2 rows)
 </pre>
 
