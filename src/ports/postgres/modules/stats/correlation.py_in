@@ -66,7 +66,7 @@ def correlation(schema_madlib, source_table, output_table,
 
     output_text_mesasge += ("\n Producing correlation for columns: {0}".
                             format(str(_existing_target_cols)))
-    plpy.info(output_text_mesasge)
+    plpy.notice(output_text_mesasge)
     # ---- Output message ----
 
     return _populate_output_table(schema_madlib, source_table, output_table,
