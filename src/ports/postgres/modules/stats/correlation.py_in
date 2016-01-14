@@ -5,11 +5,13 @@
 
 @namespace correlation
 """
-import plpy
 from time import time
+
+import plpy
+from utilities.control import MinWarning
 from utilities.utilities import unique_string, add_postfix
 from utilities.validate_args import get_cols_and_types
-from utilities.control import MinWarning
+from utilities.validate_args import input_tbl_valid, output_tbl_valid, cols_in_tbl_valid
 
 
 def correlation(schema_madlib, source_table, output_table,
@@ -30,10 +32,10 @@ def correlation(schema_madlib, source_table, output_table,
     Returns:
         Tuple (output table name, number of columns, time for computation)
     """
-    with MinWarning("error"):
+    with MinWarning("info" if verbose else "error"):
         _validate_corr_arg(source_table, output_table)
         _numeric_column_names, _nonnumeric_column_names = _get_numeric_columns(source_table)
-        _target_cols = _analyze_target_cols(target_cols)
+        _target_cols = _analyze_target_cols(source_table, target_cols)
         if _target_cols:
             # prune all non-numeric column types from target columns
             _existing_target_cols = []
@@ -81,11 +83,9 @@ def correlation(schema_madlib, source_table, output_table,
 
     return _populate_output_table(schema_madlib, source_table, output_table,
                                   _existing_target_cols, get_cov, verbose)
+# ------------------------------------------------------------------------------
 
 
-# -----------------------------------------------------------------------
-# Argument validation function
-# -----------------------------------------------------------------------
 def _validate_corr_arg(source_table, output_table):
     """
     Validates all arguments and raises an error if there is an invalid argument
@@ -98,28 +98,12 @@ def _validate_corr_arg(source_table, output_table):
     Returns:
         True if all arguments are valid
     """
-    if not source_table or source_table.strip() == '':
-        plpy.error("""
-            Correlation error: Invalid source table name""")
-    try:
-        plpy.execute("SELECT '{0}'::regclass::oid\
-                                    ".format(source_table))[0]['oid']
-    except:
-        plpy.error("Correlation error:  Relation '{0}' does not exist\
-                        ".format(source_table))
-    rowcount = plpy.execute("""
-        SELECT count(*) FROM {0}""".format(source_table))[0]['count']
-    if rowcount == 0:
-        plpy.error("Relation '{0}' is empty".format(source_table))
-
-    if not output_table or output_table.strip() == '':
-        plpy.error("Correlation error: Invalid output table name")
-    return True
+    input_tbl_valid(source_table, "Correlation")
+    output_tbl_valid(output_table, "Correlation")
+    output_tbl_valid(add_postfix(output_table, "_summary"), "Correlation")
+# ------------------------------------------------------------------------------
 
 
-# -----------------------------------------------------------------------
-# Get all numeric column names in source table
-# -----------------------------------------------------------------------
 def _get_numeric_columns(source_table):
     """
     Returns all column names for numeric type columns in a relation
@@ -143,25 +127,22 @@ def _get_numeric_columns(source_table):
         else:
             nonnum_col_names.append(col_name)
     return (numeric_col_names, nonnum_col_names)
+# ------------------------------------------------------------------------------
 
 
-# -----------------------------------------------------------------------
-# Input parameter checks and edits
-# -----------------------------------------------------------------------
-def _analyze_target_cols(target_cols):
+def _analyze_target_cols(source_table, target_cols):
     """
     Analyzes target_cols string input and converts it to a list
     """
     if not target_cols or target_cols.strip() in ('', '*'):
         target_cols = None
     else:
-        target_cols = target_cols.replace(' ', '').split(',')
+        target_cols = [i.strip() for i in target_cols.split(',')]
+        cols_in_tbl_valid(source_table, target_cols, "Correlation")
     return target_cols
+# ------------------------------------------------------------------------------
 
 
-# -----------------------------------------------------------------------
-# Create and populate output table
-# -----------------------------------------------------------------------
 def _populate_output_table(schema_madlib, source_table, output_table,
                            col_names, get_cov=True, verbose=False):
     """
@@ -276,11 +257,9 @@ def _populate_output_table(schema_madlib, source_table, output_table,
         plpy.execute("DROP TABLE {temp_table}".format(**locals()))
         end = time()
         return (output_table, len(col_names), end - start)
+# ------------------------------------------------------------------------------
 
 
-# -----------------------------------------------------------------------
-# Help messages
-# -----------------------------------------------------------------------
 def correlation_help_message(schema_madlib, message, cov=False, **kwargs):
     """
     Given a help string, provide usage information
@@ -386,3 +365,4 @@ OR
     SELECT {schema_madlib}.covariance('example');
 
             """.format(schema_madlib=schema_madlib)
+# ------------------------------------------------------------------------------
