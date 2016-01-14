@@ -118,10 +118,9 @@ def _get_numeric_columns(source_table):
     # retrieve the numeric columns
     numeric_types = ('smallint', 'integer', 'bigint',
                      'real', 'numeric', 'double precision')
-    all_col_types = get_cols_and_types(source_table)
     numeric_col_names = []
     nonnum_col_names = []
-    for col_name, col_type in all_col_types.items():
+    for col_name, col_type in get_cols_and_types(source_table):
         if col_type in numeric_types:
             numeric_col_names.append(col_name)
         else:
