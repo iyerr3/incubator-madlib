@@ -159,10 +159,11 @@ class GroupIterationController:
                                    insert_values,
                                    self.grp_to_n_tuples.keys(),
                                    self.grp_to_n_tuples.values()])
-        plpy.execute(insert_plan, [self.failed_grp_keys,
-                                   [],
-                                   self.grp_to_n_tuples.keys(),
-                                   self.grp_to_n_tuples.values()])
+        if self.failed_grp_keys:
+            plpy.execute(insert_plan, [self.failed_grp_keys,
+                                       [],
+                                       self.grp_to_n_tuples.keys(),
+                                       self.grp_to_n_tuples.values()])
 
     def __exit__(self, type, value, tb):
         self.in_with = False
