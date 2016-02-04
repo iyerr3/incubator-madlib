@@ -145,9 +145,6 @@ class GroupIterationController:
                 iteration=self.iteration,
                 unnest_str=unnest_str,
                 **self.kwargs)
-        insert_plan = plpy.prepare(insert_sql,
-                                   ["text[]", grouped_state_type,
-                                    "text[]", "bigint[]"])
 
         if self.is_state_type_bytea8:
             insert_values = self.finished_states.values()
@@ -155,11 +152,18 @@ class GroupIterationController:
         else:
             insert_values = [c for state in self.finished_states.values()
                              for c in state]
+
+        insert_plan = plpy.prepare(insert_sql,
+                                   ["text[]", grouped_state_type,
+                                    "text[]", "bigint[]"])
         plpy.execute(insert_plan, [self.finished_states.keys(),
                                    insert_values,
                                    self.grp_to_n_tuples.keys(),
                                    self.grp_to_n_tuples.values()])
         if self.failed_grp_keys:
+            insert_plan = plpy.prepare(insert_sql,
+                                       ["text[]", grouped_state_type,
+                                        "text[]", "bigint[]"])
             plpy.execute(insert_plan, [self.failed_grp_keys,
                                        [],
                                        self.grp_to_n_tuples.keys(),
