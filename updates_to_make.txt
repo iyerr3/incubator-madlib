@@ -1,0 +1,8 @@
+1. Find if we need the *wrap functions - can the dense operations be combined?
+2.
+
+Requirements from PCA:
+    -
+
+SVD Dense:
+-
