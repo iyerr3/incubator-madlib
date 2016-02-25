@@ -1,8 +1,37 @@
 1. Find if we need the *wrap functions - can the dense operations be combined?
 2.
 
+SVD dense (originally called svd):
+- validate args
+- cast to correct columns
+- validate dense
+- transpose if needed
+- call _svd
+- create summary
+
+SVD sparse:
+- validate args
+- create temp sparse with dims ?
+- densify
+- call svd_dense
+- create summary
+
+SVD sparse native:
+- validate args
+- convert table + filter null "value"
+- call _svd
+- switch U-V if col_dim > row_dim
+- create summary
+
+_svd:
+- find if sparse
+- if sparse call __svd_lanczos_bidiagonalize_sparse
+  else call __svd_lanczos_bidiagonalize
+- compute dimensions of bidiagonal matrix b
+- compute decomposition using __svd_decompose_bidiag
+- create matrix s
+- create left and right matrices using __svd_vec_trans_mult_matrix (why via sql?)
+
+
 Requirements from PCA:
     -
-
-SVD Dense:
--
