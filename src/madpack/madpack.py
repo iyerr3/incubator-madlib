@@ -456,7 +456,6 @@ def _db_install(schema, dbrev, testcase):
         schema_writable = True
     except:
         schema_writable = False
-
     # CASE #1: Target schema exists with MADlib objects:
     if schema_writable and madlib_exists:
         # work-around before UDT is available in HAWQ
@@ -1173,9 +1172,8 @@ def main(argv):
         if _get_rev_num(dbrev) >= _get_rev_num(rev):
             _info("Current MADlib version already up to date.", True)
             return
-        # proceed to create objects if nothing installed in DB or for HAWQ
-        elif (args.command[0] == 'reinstall' and dbrev is None or
-                portid == 'hawq'):
+        # proceed to create objects if nothing installed in DB or for HAWQ < 2.0
+        elif dbrev is None or (portid == 'hawq' and not is_hawq2):
             pass
         # error and refer to upgrade if OS > DB
         else:
