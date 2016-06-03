@@ -213,8 +213,7 @@ class PolyKernel(object):
                 select
                     $1 as {val}, id as {id}
                 from generate_series(1, 1) as id
-        """.format(data=rd_coefs_,
-                   val=rd_val_, id=rd_id_)
+        """.format(data=rd_coefs_, val=rd_val_, id=rd_id_)
         plpy.execute(plpy.prepare(run_sql, ["float[]"]), [vals_])
 
         rd_reps_ = unique_string(desp='reps_nz')
@@ -249,7 +248,8 @@ class PolyKernel(object):
 
     def transform(self, source_table, independent_varname,
                   dependent_varname=None, grouping_col=None, id_col=None,
-                  transformed_name='poly_transformed'):
+                  transformed_name='poly_transformed',
+                  add_origin=False):
         if not self.pro:
             return self
         self.original_table = dict(source_table=source_table,
@@ -258,7 +258,7 @@ class PolyKernel(object):
         schema_madlib = self.schema_madlib
 
         def _cast_if_null(input, alias):
-            null_str = "NULL::integer"
+            null_str = "NULL"
             if input:
                 return str(input)
             else:
@@ -272,7 +272,18 @@ class PolyKernel(object):
         target_col = unique_string(desp='target_col')
         transformed = unique_string(desp=transformed_name)
         intercept = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
-
+        n_target_features = self.n_components + (0, 1)[self.fit_intercept]
+        if add_origin:
+            union_origin_sql = """ UNION
+                SELECT {schema_madlib}.array_fill(
+                            {schema_madlib}.array_of_float({n_target_features}),
+                            0::float) as {features_col},
+                        0 as {target_col},
+                        NULL as {id_col},
+                        NULL as {grouping_col}
+                """.format(**locals())
+        else:
+            union_origin_sql = ""
         # X = a * cos (X*C + b)
         pro, multiplier = self.pro, sqrt(1. / self.n_components)
         run_sql = """
@@ -313,6 +324,7 @@ class PolyKernel(object):
                 cross join (select {pro.rd_val} from {pro.coefs}) as coefs
                 cross join (select {pro.rd_val} from {pro.reps}) as reps
                 cross join (select {pro.rd_val} from {pro.other_features}) as of
+            {union_origin_sql}
         """.format(**locals())
         plpy.execute(run_sql)
         # assert(self.n_components == num_features(transformed, features_col))
@@ -511,7 +523,7 @@ class GaussianKernel(GaussianKernelBase):
 
     def transform(self, source_table, independent_varname,
                   dependent_varname=None, grouping_col=None, id_col=None,
-                  transformed_name='gaussian_transformed'):
+                  transformed_name='gaussian_transformed', add_origin=False):
         if not self.rd_offset or not self.rd_weights:
             return self
         self.original_table = dict(source_table=source_table,
@@ -558,6 +570,7 @@ class GaussianKernel(GaussianKernelBase):
         independent_varname = features_col
 
         temp_transformed = unique_string(desp='temp_transformed')
+
         # X = X * weights
         run_sql = """
             drop table if exists {temp_transformed};
@@ -586,11 +599,22 @@ class GaussianKernel(GaussianKernelBase):
         multiplier = sqrt(2. / self.n_components)
 
         intercept = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
+        n_target_features = self.n_components + (0, 1)[self.fit_intercept]
+        if add_origin:
+            union_origin_sql = """ UNION
+                SELECT {schema_madlib}.array_fill(
+                            {schema_madlib}.array_of_float({n_target_features}),
+                            0::float) as {independent_varname},
+                        0 as {dependent_varname},
+                        NULL as {id_col},
+                        NULL as {grouping_col}
+                """.format(**locals())
+        else:
+            union_origin_sql = ""
         run_sql = """
             drop table if exists {transformed};
             create temp table {transformed} as
                 select
-                    {index_col},
                     array_cat({intercept},
                               {schema_madlib}.array_scalar_mult(
                                     {schema_madlib}.array_cos(
@@ -608,6 +632,7 @@ class GaussianKernel(GaussianKernelBase):
                             $1) as {independent_varname}
                     from {temp_transformed} as x
                 ) q join {source_table} s using ({index_col})
+                {union_origin_sql}
         """.format(**locals())
         plpy.execute(plpy.prepare(run_sql, ['float[]']), [rd_offset_vals])
         # clear table generated from matrix mult
@@ -651,7 +676,7 @@ class GaussianKernelInMemory(GaussianKernelBase):
 
     def transform(self, source_table, independent_varname,
                   dependent_varname=None, grouping_col=None, id_col=None,
-                  transformed_name='gaussian_transformed'):
+                  transformed_name='gaussian_transformed', add_origin=False):
         if not self.rd_offset or not self.rd_weights:
             return self
 
@@ -679,6 +704,18 @@ class GaussianKernelInMemory(GaussianKernelBase):
         # X <- 1 + a * cos (X*C + b)
         multiplier = sqrt(2. / self.n_components)
         intercept = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
+        n_target_features = self.n_components + (0, 1)[self.fit_intercept]
+        if add_origin:
+            union_origin_sql = """ UNION
+                SELECT {schema_madlib}.array_fill(
+                            {schema_madlib}.array_of_float({n_target_features}),
+                            0::float) as {features_col},
+                        0 as {target_col},
+                        NULL as {id_col},
+                        NULL as {grouping_col}
+                """.format(**locals())
+        else:
+            union_origin_sql = ""
         run_sql = """
             drop table if exists {transformed};
             create temp table {transformed} as
@@ -712,6 +749,7 @@ class GaussianKernelInMemory(GaussianKernelBase):
                 ) q
                 cross join (select {self.rd_val} from {self.rd_weights}) as rw
                 cross join (select {self.rd_val} from {self.rd_offset}) as ro
+                {union_origin_sql}
         """.format(**locals())
         plpy.execute(run_sql)
         self.transformed_table = dict(source_table=transformed,
