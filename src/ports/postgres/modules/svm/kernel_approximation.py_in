@@ -43,13 +43,14 @@ PolyRandOperator = namedtuple('PolyRandOperator',
 class PolyKernel(object):
     """docstring for PolyKernel"""
     def __init__(self, schema_madlib, degree=2, coef0=1, n_components=100,
-                 random_state=1, poly_operator=None, orig_data=None):
+                 random_state=1, poly_operator=None, orig_data=None, fit_intercept=False):
         self.schema_madlib = schema_madlib
         self.kernel_func = 'polynomial'
         self.degree = degree
         self.coef0 = coef0
         self.n_components = n_components
         self.random_state = random_state
+        self.fit_intercept = fit_intercept
         # polynomial random mapping operator
         self.pro = poly_operator
         self.orig_data = orig_data
@@ -78,7 +79,6 @@ class PolyKernel(object):
                          "Original data table exists: {0}"
                          .format(self.orig_data))
             return
-
         run_sql = """
             create table {name} as
                 select {pro.rd_id} as id, {pro.rd_val} as val,
@@ -142,12 +142,11 @@ class PolyKernel(object):
 
     @property
     def kernel_params(self):
-        return ('degree={degree}, coef0={coef0}, '
-                'n_components={n_components}, '
-                'random_state={random_state}'
-                .format(degree=self.degree, coef0=self.coef0,
-                        n_components=self.n_components,
-                        random_state=self.random_state))
+        return ('degree={self.degree}, coef0={self.coef0}, '
+                'n_components={self.n_components}, '
+                'random_state={self.random_state}, '
+                'fit_intercept={self.fit_intercept}'
+                .format(self=self))
 
     @classmethod
     def parse_params(cls, kernel_params='', n_features=10):
@@ -155,12 +154,14 @@ class PolyKernel(object):
             'degree': 3,
             'n_components': 2*n_features,
             'coef0': 1,
-            'random_state': 1}
+            'random_state': 1,
+            'fit_intercept': False}
         params_types = {
             'degree': int,
             'n_components': int,
             'coef0': float,
-            'random_state': int}
+            'random_state': int,
+            'fit_intercept': bool}
         return extract_keyvalue_params(kernel_params, params_types, params_default)
 
     def fit(self, n_features):
@@ -270,6 +271,7 @@ class PolyKernel(object):
         features_col = unique_string(desp='features_col')
         target_col = unique_string(desp='target_col')
         transformed = unique_string(desp=transformed_name)
+        intercept = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
 
         # X = a * cos (X*C + b)
         pro, multiplier = self.pro, sqrt(1. / self.n_components)
@@ -277,21 +279,24 @@ class PolyKernel(object):
         drop table if exists {transformed};
         create temp table {transformed} as
             select
-                {schema_madlib}.array_scalar_mult(
-                    array_cat(
-                        {schema_madlib}.array_mult(
-                            {schema_madlib}.__row_fold(
-                                {schema_madlib}.__matrix_vec_mult_in_mem(
-                                    q.{features_col}::float[],
-                                    weights.{pro.rd_val}::float[]
+                array_cat(
+                    {intercept},
+                    {schema_madlib}.array_scalar_mult(
+                        array_cat(
+                            {schema_madlib}.array_mult(
+                                {schema_madlib}.__row_fold(
+                                    {schema_madlib}.__matrix_vec_mult_in_mem(
+                                        q.{features_col}::float[],
+                                        weights.{pro.rd_val}::float[]
+                                    )::float[],
+                                    reps.{pro.rd_val}::integer[]
                                 )::float[],
-                                reps.{pro.rd_val}::integer[]
+                                coefs.{pro.rd_val}::float[]
                             )::float[],
-                            coefs.{pro.rd_val}::float[]
+                            of.{pro.rd_val}::float[]
                         )::float[],
-                        of.{pro.rd_val}::float[]
-                    )::float[],
-                    {multiplier}::float
+                        {multiplier}::float
+                    )::float[]
                 ) as {features_col},
                 q.{target_col} as {target_col},
                 {id_col},
@@ -323,12 +328,13 @@ class GaussianKernelBase(object):
 
     def __init__(self, schema_madlib, gamma, n_components, random_state,
                  random_weights, random_offset, id_col, val_col,
-                 orig_data, **kwargs):
+                 orig_data, fit_intercept=False, **kwargs):
         self.kernel_func = 'gaussian'
         self.gamma = gamma
         self.n_components = n_components
         # int32 seed used by boost::minstd_rand
         self.random_state = random_state
+        self.fit_intercept = fit_intercept
         # random operators
         self.rd_weights = random_weights
         self.rd_offset = random_offset
@@ -415,12 +421,14 @@ class GaussianKernelBase(object):
             'in_memory': 1,
             'gamma': 1 / n_features,
             'random_state': 1,
-            'n_components': 2 * n_features}
+            'n_components': 2 * n_features,
+            'fit_intercept': False}
         params_types = {
             'in_memory': int,
             'gamma': float,
             'random_state': int,
-            'n_components': int}
+            'n_components': int,
+            'fit_intercept': bool}
         return extract_keyvalue_params(kernel_params,
                                        params_types,
                                        params_default)
@@ -476,7 +484,7 @@ class GaussianKernel(GaussianKernelBase):
     def __init__(self, schema_madlib, gamma=1, n_components=100,
                  random_state=1, random_weights=None,
                  random_offset=None, id_col=None, val_col=None,
-                 orig_data=None, **kwargs):
+                 orig_data=None, fit_intercept=False, **kwargs):
         params = locals()
         params.pop('self')
         super(GaussianKernel, self).__init__(**params)
@@ -484,10 +492,11 @@ class GaussianKernel(GaussianKernelBase):
     @property
     def kernel_params(self):
         return ('gamma={gamma}, n_components={n_components},'
-                'random_state={random_state}, in_memory=0'
+                'random_state={random_state}, fit_intercept={fit_intercept}, in_memory=0'
                 .format(gamma=self.gamma,
                         n_components=self.n_components,
-                        random_state=self.random_state))
+                        random_state=self.random_state,
+                        fit_intercept=self.fit_intercept))
 
     def fit(self, n_features):
         self.clear()
@@ -575,15 +584,19 @@ class GaussianKernel(GaussianKernelBase):
 
         # X = a * cos (X + b)
         multiplier = sqrt(2. / self.n_components)
+
+        intercept = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
         run_sql = """
             drop table if exists {transformed};
             create temp table {transformed} as
                 select
                     {index_col},
-                    {schema_madlib}.array_scalar_mult(
-                        {schema_madlib}.array_cos(
-                            q.{independent_varname}::float[])::float[],
-                        {multiplier}::float) as {independent_varname},
+                    array_cat({intercept},
+                              {schema_madlib}.array_scalar_mult(
+                                    {schema_madlib}.array_cos(
+                                        q.{independent_varname}::float[])::float[],
+                                    {multiplier}::float)::float[]
+                    ) as {independent_varname},
                     {dependent_varname},
                     {id_col},
                     {grouping_col}
@@ -613,18 +626,17 @@ class GaussianKernelInMemory(GaussianKernelBase):
     def __init__(self, schema_madlib, gamma=1, n_components=100,
                  random_state=1, random_weights=None,
                  random_offset=None, id_col=None,
-                 val_col=None, orig_data=None, **kwargs):
+                 val_col=None, orig_data=None, fit_intercept=False, **kwargs):
         params = locals()
         params.pop('self')
         super(GaussianKernelInMemory, self).__init__(**params)
 
     @property
     def kernel_params(self):
-        return ('gamma={gamma}, n_components={n_components},'
-                'random_state={random_state}, in_memory=1'
-                .format(gamma=self.gamma,
-                        n_components=self.n_components,
-                        random_state=self.random_state))
+        return ('gamma={self.gamma}, n_components={self.n_components},'
+                'random_state={self.random_state}, '
+                'fit_intercept={self.fit_intercept}, in_memory=1'
+                .format(self=self))
 
     def fit(self, n_features):
         self.clear()
@@ -664,23 +676,27 @@ class GaussianKernelInMemory(GaussianKernelBase):
         target_col = unique_string(desp='target_col')
         transformed = unique_string(desp=transformed_name)
 
-        # X <- a * cos (X*C + b)
+        # X <- 1 + a * cos (X*C + b)
         multiplier = sqrt(2. / self.n_components)
+        intercept = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
         run_sql = """
             drop table if exists {transformed};
             create temp table {transformed} as
                 select
-                    {schema_madlib}.array_scalar_mult(
-                        {schema_madlib}.array_cos(
-                            {schema_madlib}.array_add(
-                                {schema_madlib}.__matrix_vec_mult_in_mem(
-                                    q.{features_col}::float[],
-                                    rw.{self.rd_val}::float[]
-                                )::float[],
-                                ro.{self.rd_val}::float[]
-                            )::float[]
-                        )::float[],
-                        {multiplier}::float
+                    array_cat(
+                        {intercept},
+                        {schema_madlib}.array_scalar_mult(
+                            {schema_madlib}.array_cos(
+                                {schema_madlib}.array_add(
+                                    {schema_madlib}.__matrix_vec_mult_in_mem(
+                                        q.{features_col}::float[],
+                                        rw.{self.rd_val}::float[]
+                                    )::float[],
+                                    ro.{self.rd_val}::float[]
+                                )::float[]
+                            )::float[],
+                            {multiplier}::float
+                        )::float[]
                     ) as {features_col},
                     q.{target_col} as {target_col},
                     {id_col},

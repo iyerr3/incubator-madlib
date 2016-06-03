@@ -273,9 +273,9 @@ svm_one_class(
 </pre>
 \b Arguments
 
-Specifications for novelty detection are largely the same as for classification, excepting
-that the dependent variable name is not specified. The model table is the same as that for classification.
-
+Specifications for novelty detection are largely the same as for classification,
+except the dependent variable name is not specified. The model table is the same
+as that for classification.
 
 @anchor kernel_params
 @par Kernel Parameters
@@ -1118,7 +1118,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class(
     grouping_col text,
     params text)
 RETURNS void AS $$
-    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, $5, $6, $7, NULL);
+    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, $5, $6, $7, FALSE);
 $$ LANGUAGE sql VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA');
 
@@ -1130,7 +1130,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class(
     kernel_params text,
     grouping_col text)
 RETURNS void AS $$
-    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, $5, $6, NULL);
+    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, $5, $6, ''::text, FALSE);
 $$ LANGUAGE sql VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA');
 
@@ -1141,7 +1141,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class(
     kernel_func text,
     kernel_params text)
   RETURNS void AS $$
-    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, $5, NULL);
+    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, $5, ''::text, ''::text, FALSE);
 $$ LANGUAGE sql VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA');
 
@@ -1151,7 +1151,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class(
     independent_varname text,
     kernel_func text)
   RETURNS void AS $$
-    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, NULL);
+    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, $4, ''::text, ''::text, ''::text, FALSE);
 $$ LANGUAGE sql VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA');
 
@@ -1161,7 +1161,8 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class(
     model_table text,
     independent_varname text)
   RETURNS void AS $$
-    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, NULL);
+    SELECT MADLIB_SCHEMA.svm_one_class($1, $2, $3, ''::text,
+                                       ''::text, ''::text, ''::text, FALSE);
 $$ LANGUAGE sql VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA');
 
@@ -1222,9 +1223,8 @@ m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_classification (
     message  TEXT
 ) RETURNS TEXT AS $$
-    global is_svc
-    is_svc = True
-    PythonFunction(svm, svm, svm_help)
+    PythonFunctionBodyOnly(svm, svm)
+    svm.svm_help(schema_madlib, message, True)
 $$ LANGUAGE plpythonu
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
@@ -1237,9 +1237,8 @@ m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `CONTAINS SQL', `');
 CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class (
     message  TEXT
 ) RETURNS TEXT AS $$
-    global is_svc
-    is_svc = True
-    PythonFunction(svm, svm, svm_one_class_help)
+    PythonFunctionBodyOnly(svm, svm)
+    svm.svm_one_class_help(schema_madlib, message, True)
 $$ LANGUAGE plpythonu
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
@@ -1252,9 +1251,8 @@ m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `CONTAINS SQL', `');
 CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_regression (
     message  TEXT
 ) RETURNS TEXT AS $$
-    global is_svc
-    is_svc = False
-    PythonFunction(svm, svm, svm_help)
+    PythonFunctionBodyOnly(svm, svm)
+    svm.svm_help(schema_madlib, message, False)
 $$ LANGUAGE plpythonu
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
