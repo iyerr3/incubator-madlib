@@ -19,19 +19,13 @@ from __future__ import division
 
 import plpy
 
-from utilities.utilities import unique_string
-from utilities.utilities import extract_keyvalue_params
-from utilities.utilities import num_features
+from utilities.utilities import unique_string, num_features
 
-from math import sqrt
-from math import pi
-from math import log
-from math import factorial
+from math import sqrt, pi, log, factorial
+from random import random, seed
+from functools import reduce
 
-from random import random
-from random import seed
-
-from operator import mul
+import operator
 from collections import namedtuple
 
 
@@ -43,7 +37,8 @@ PolyRandOperator = namedtuple('PolyRandOperator',
 class PolyKernel(object):
     """docstring for PolyKernel"""
     def __init__(self, schema_madlib, degree=2, coef0=1, n_components=100,
-                 random_state=1, poly_operator=None, orig_data=None, fit_intercept=False):
+                 random_state=1, poly_operator=None, orig_data=None,
+                 fit_intercept=False, **kwargs):
         self.schema_madlib = schema_madlib
         self.kernel_func = 'polynomial'
         self.degree = degree
@@ -100,18 +95,21 @@ class PolyKernel(object):
         plpy.execute(run_sql)
 
     @classmethod
-    def create(cls, schema_madlib, n_features, kernel_params):
-        params = cls.parse_params(kernel_params, n_features)
+    def create(cls, schema_madlib, n_features, params=None):
+        if not params:
+            params = cls._get_default_params(n_features)
         return cls(schema_madlib, **params)
 
     @classmethod
-    def load_from(cls, schema_madlib, data, kernel_params=''):
+    def load_from(cls, schema_madlib, data, params=None):
         other_features = unique_string(desp='other_features')
         rd_weights = unique_string(desp='random_weights')
         rd_coefs = unique_string(desp='random_coefs')
         rd_reps = unique_string(desp='random_reps')
         rd_val = unique_string(desp='val')
         rd_id = unique_string(desp='id')
+        if not params:
+            params = cls._get_default_params()
         plpy.execute("""
                 drop view if exists {rd_weights};
                 create temp view {rd_weights} as
@@ -133,12 +131,21 @@ class PolyKernel(object):
                     select id as {rd_id}, val as {rd_val} from {data}
                     where desp = 'other_features';
                      """.format(**locals()))
-        params = cls.parse_params(kernel_params)
         pro = PolyRandOperator(weights=rd_weights, coefs=rd_coefs,
                                reps=rd_reps, other_features=other_features,
                                rd_id=rd_id, rd_val=rd_val)
 
         return cls(schema_madlib, poly_operator=pro, orig_data=data, **params)
+
+    @classmethod
+    def _get_default_params(n_features=10):
+        return {
+            'n_components': 2 * n_features,
+            'fit_intercept': False,
+            'random_state': 1,
+            'degree': 3,
+            'coef0': 1,
+        }
 
     @property
     def kernel_params(self):
@@ -148,22 +155,6 @@ class PolyKernel(object):
                 'fit_intercept={self.fit_intercept}'
                 .format(self=self))
 
-    @classmethod
-    def parse_params(cls, kernel_params='', n_features=10):
-        params_default = {
-            'degree': 3,
-            'n_components': 2*n_features,
-            'coef0': 1,
-            'random_state': 1,
-            'fit_intercept': False}
-        params_types = {
-            'degree': int,
-            'n_components': int,
-            'coef0': float,
-            'random_state': int,
-            'fit_intercept': bool}
-        return extract_keyvalue_params(kernel_params, params_types, params_default)
-
     def fit(self, n_features):
         # fast way to compute nCr
         # combinations and permutations
@@ -171,7 +162,7 @@ class PolyKernel(object):
             r = min(r, n-r)
             if r == 0:
                 return 1
-            numer = reduce(mul, range(n, n-r, -1))
+            numer = reduce(operator.mul, range(n, n-r, -1))
             denom = factorial(r + 1)
             return numer // denom
 
@@ -428,26 +419,9 @@ class GaussianKernelBase(object):
         plpy.execute(run_sql)
 
     @classmethod
-    def parse_params(cls, kernel_params='', n_features=10):
-        params_default = {
-            'in_memory': 1,
-            'gamma': 1 / n_features,
-            'random_state': 1,
-            'n_components': 2 * n_features,
-            'fit_intercept': False}
-        params_types = {
-            'in_memory': int,
-            'gamma': float,
-            'random_state': int,
-            'n_components': int,
-            'fit_intercept': bool}
-        return extract_keyvalue_params(kernel_params,
-                                       params_types,
-                                       params_default)
-
-    @classmethod
-    def create(cls, schema_madlib, n_features, kernel_params):
-        params = cls.parse_params(kernel_params, n_features)
+    def create(cls, schema_madlib, n_features, params=None):
+        if not params:
+            params = cls._get_default_params(n_features)
         in_memory = params.pop('in_memory', True)
         # according to the 1gb limit on each entry of the table
         n_elems = params['n_components'] * n_features
@@ -457,7 +431,17 @@ class GaussianKernelBase(object):
             return GaussianKernel(schema_madlib, **params)
 
     @classmethod
-    def load_from(cls, schema_madlib, data, kernel_params=''):
+    def _get_default_params(n_features=10):
+        return {
+            'n_components': 2 * n_features,
+            'fit_intercept': False,
+            'random_state': 1,
+            'in_memory': 1,
+            'gamma': 1 / n_features,
+        }
+
+    @classmethod
+    def load_from(cls, schema_madlib, data, params=None):
         rd_weights = unique_string(desp='random_weights')
         rd_offset = unique_string(desp='random_offsets')
         rd_val = unique_string(desp='val')
@@ -473,7 +457,8 @@ class GaussianKernelBase(object):
                     select id as {rd_id}, val as {rd_val} from {data}
                     where desp = 'offsets';
                      """.format(**locals()))
-        params = cls.parse_params(kernel_params)
+        if not params:
+            params = cls._get_default_params()
         in_memory = params.pop('in_memory', True)
         if in_memory:
             return GaussianKernelInMemory(schema_madlib,
@@ -758,19 +743,19 @@ class GaussianKernelInMemory(GaussianKernelBase):
         return self
 
 
-def create_kernel(schema_madlib, n_features, kernel_func, kernel_params):
+def create_kernel(schema_madlib, n_features, kernel_func, kernel_params_dict):
     if kernel_func == 'linear':
         return None
     elif kernel_func == 'gaussian':
-        return GaussianKernelBase.create(schema_madlib, n_features, kernel_params)
+        return GaussianKernelBase.create(schema_madlib, n_features, kernel_params_dict)
     elif kernel_func == 'polynomial':
-        return PolyKernel.create(schema_madlib, n_features, kernel_params)
+        return PolyKernel.create(schema_madlib, n_features, kernel_params_dict)
 
 
-def load_kernel(schema_madlib, data, kernel_func, kernel_params):
+def load_kernel(schema_madlib, data, kernel_func, kernel_params_dict):
     if kernel_func == 'linear':
         return None
     elif kernel_func == 'gaussian':
-        return GaussianKernelBase.load_from(schema_madlib, data, kernel_params)
+        return GaussianKernelBase.load_from(schema_madlib, data, kernel_params_dict)
     elif kernel_func == 'polynomial':
-        return PolyKernel.load_from(schema_madlib, data, kernel_params)
+        return PolyKernel.load_from(schema_madlib, data, kernel_params_dict)

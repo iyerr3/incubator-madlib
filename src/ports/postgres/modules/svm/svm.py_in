@@ -9,13 +9,13 @@ from kernel_approximation import create_kernel, load_kernel
 from utilities.control import MinWarning
 from utilities.in_mem_group_control import GroupIterationController
 from utilities.validate_args import explicit_bool_to_text
-from utilities.utilities import unique_string
 from utilities.utilities import extract_keyvalue_params
 from utilities.utilities import preprocess_keyvalue_params
 from utilities.utilities import add_postfix
 from utilities.utilities import _string_to_array_with_quotes
 from utilities.utilities import _string_to_array
 from utilities.utilities import _assert
+from utilities.utilities import unique_string
 from utilities.utilities import num_features, num_samples
 
 from utilities.validate_args import cols_in_tbl_valid
@@ -162,12 +162,12 @@ def _build_output_tables(n_iters_run, model_table, args, transformer, **kwargs):
 
     grouping_col = args['grouping_col']
     col_grp_key = args['col_grp_key']
-    groupby_str, grouping_str1, using_str = "", "", "ON TRUE"
     if grouping_col:
-        groupby_str = "GROUP BY {grouping_col}, {col_grp_key}".format(
-            grouping_col=grouping_col, col_grp_key=col_grp_key)
+        groupby_str = "GROUP BY {0}, {1}".format(grouping_col, col_grp_key)
         grouping_str1 = grouping_col + ","
         using_str = "USING ({col_grp_key})".format(col_grp_key=col_grp_key)
+    else:
+        groupby_str, grouping_str1, using_str = "", "", "ON TRUE"
     # organizing results
     dep_type = get_expr_type(dependent_varname, source_table)
     model_table_query = """
@@ -381,6 +381,24 @@ def svm_predict_help(schema_madlib, message, **kwargs):
         """.format(**args)
 
 
+def svm_one_class(schema_madlib, source_table, model_table, independent_varname,
+                  kernel_func, kernel_params, grouping_col, params,
+                  verbose, **kwargs):
+    """ Execute the support vector one-class classification algorithm.
+    """
+    source_temp_rel = unique_string(desp=source_table)
+    dependent_varname = unique_string(desp='dep_var')
+    plpy.execute("""
+        CREATE VIEW {source_temp_rel} AS
+        SELECT *, 1.0 AS {dependent_varname}
+        FROM {source_table}
+        """.format(**locals()))
+    svm(schema_madlib, source_temp_rel, model_table,
+        dependent_varname, independent_varname, kernel_func,
+        kernel_params, grouping_col, params, True,
+        verbose, add_intercept=True, add_origin_in_kernel_space=True)
+
+
 def get_svc_params_usage_string():
     return """
       ---------------------------------------------------------------------------
@@ -457,25 +475,6 @@ def get_svc_poly_usage_string():
                              takes longer to train.
       random_state        -- Default: 1. Seed used by the random number generator.
       """
-
-
-def svm_one_class(schema_madlib, source_table, model_table, independent_varname,
-                  kernel_func, kernel_params, grouping_col, params,
-                  verbose, **kwargs):
-    """ Execute the support vector one-class classification algorithm.
-    """
-    source_temp_rel = unique_string(desp=source_table)
-    dependent_varname = unique_string(desp='dep_var')
-    plpy.execute("""
-        CREATE VIEW {source_temp_rel} AS
-        SELECT *, 1.0 AS {dependent_varname}
-        FROM {source_table}
-        """.format(**locals()))
-    kernel_params = kernel_params + ", fit_intercept = true"
-    svm(schema_madlib, source_temp_rel, model_table,
-        dependent_varname, independent_varname, kernel_func,
-        kernel_params, grouping_col, params, is_svc=True,
-        verbose=verbose, add_origin_in_kernel_space=True)
 
 
 def svm_one_class_help(schema_madlib, message, is_svc, **kwargs):
@@ -920,7 +919,8 @@ def svm_help(schema_madlib, message, is_svc, **kwargs):
 def svm(schema_madlib, source_table, model_table,
         dependent_varname, independent_varname, kernel_func,
         kernel_params, grouping_col, params, is_svc,
-        verbose, add_origin_in_kernel_space=False, **kwargs):
+        verbose,
+        add_intercept=False, add_origin_in_kernel_space=False, **kwargs):
     """
     Executes the linear support vector classification algorithm.
     """
@@ -935,11 +935,15 @@ def svm(schema_madlib, source_table, model_table,
         transformer = _random_feature_map(schema_madlib, source_table,
                                           dependent_varname, independent_varname,
                                           kernel_func, kernel_params,
-                                          grouping_col, add_origin_in_kernel_space)
+                                          grouping_col,
+                                          add_origin_in_kernel_space)
         params_dict = _extract_params(schema_madlib, params)
         args = locals()
         if transformer is not None:
             args.update(transformer.transformed_table)
+        # else:
+        #     # check if origin and intercept needs to be added for the linear svm case
+
         _cross_validate_svm(args)
         _svm_parsed_params(**args)
 
@@ -1032,8 +1036,9 @@ def _random_feature_map(schema_madlib, source_table, dependent_varname,
         return None
 
     n_features = num_features(source_table, independent_varname)
+    kernel_params_dict = _extract_kernel_params(kernel_params, n_features)
     transformer = create_kernel(schema_madlib, n_features,
-                                kernel_func, kernel_params)
+                                kernel_func, kernel_params_dict)
     return (transformer.fit(n_features)
             .transform(source_table, independent_varname,
                        dependent_varname, grouping_col,
@@ -1182,10 +1187,11 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
         output_tbl_valid(output_table, 'SVM')
 
         if kernel_func.lower() != 'linear':
+            kernel_params_dict = _extract_kernel_params(kernel_params)
             random_table = add_postfix(model_table, '_random')
             input_tbl_valid(random_table, 'SVM')
             transformer = load_kernel(schema_madlib, random_table,
-                                      kernel_func, kernel_params)
+                                      kernel_func, kernel_params_dict)
             transformer.transform(new_data_table, independent_varname,
                                   grouping_col=grouping_col, id_col=id_col_name)
             transformed_table = transformer.transformed_table
@@ -1364,6 +1370,33 @@ def _process_epsilon(is_svc, args):
             'epsilon': epsilon,
             'rel_epsilon': rel_epsilon,
             'as_rel_source': as_rel_source}
+
+
+def _extract_kernel_params(kernel_params='', n_features=10):
+    params_default = {
+        # common params
+        'n_components': 2 * n_features,
+        'fit_intercept': False,
+        'random_state': 1,
+
+        # polynomial params
+        'degree': 3,
+        'coef0': 1,
+
+        # gaussian params
+        'in_memory': 1,
+        'gamma': 1 / n_features,
+    }
+    params_types = {
+        'n_components': int,
+        'fit_intercept': bool,
+        'random_state': int,
+        'degree': int,
+        'coef0': float,
+        'in_memory': int,
+        'gamma': float,
+    }
+    return extract_keyvalue_params(kernel_params, params_types, params_default)
 
 
 def _extract_params(schema_madlib, params, module='SVM'):
