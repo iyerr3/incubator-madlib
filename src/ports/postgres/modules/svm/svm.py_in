@@ -388,6 +388,7 @@ def svm_one_class(schema_madlib, source_table, model_table, independent_varname,
     """
     source_temp_rel = unique_string(desp=source_table)
     dependent_varname = unique_string(desp='dep_var')
+    params = params + ', class_weight=balanced'
     plpy.execute("""
         CREATE VIEW {source_temp_rel} AS
         SELECT *, 1.0 AS {dependent_varname}
@@ -919,8 +920,8 @@ def svm_help(schema_madlib, message, is_svc, **kwargs):
 def svm(schema_madlib, source_table, model_table,
         dependent_varname, independent_varname, kernel_func,
         kernel_params, grouping_col, params, is_svc,
-        verbose,
-        add_intercept=False, add_origin_in_kernel_space=False, **kwargs):
+        verbose, add_intercept=False, add_origin_in_kernel_space=False,
+        **kwargs):
     """
     Executes the linear support vector classification algorithm.
     """
@@ -932,17 +933,15 @@ def svm(schema_madlib, source_table, model_table,
         grouping_str, grouping_col = \
             _get_grouping_col_str(schema_madlib, source_table, grouping_col)
         kernel_func = _get_kernel_name(kernel_func)
-        transformer = _random_feature_map(schema_madlib, source_table,
+        transformer = _transform_w_kernel(schema_madlib, source_table,
                                           dependent_varname, independent_varname,
                                           kernel_func, kernel_params,
-                                          grouping_col,
+                                          grouping_col, add_intercept,
                                           add_origin_in_kernel_space)
         params_dict = _extract_params(schema_madlib, params)
         args = locals()
         if transformer is not None:
             args.update(transformer.transformed_table)
-        # else:
-        #     # check if origin and intercept needs to be added for the linear svm case
 
         _cross_validate_svm(args)
         _svm_parsed_params(**args)
@@ -1028,21 +1027,20 @@ def _get_kernel_name(kernel_func):
 # ------------------------------------------------------------------------------
 
 
-def _random_feature_map(schema_madlib, source_table, dependent_varname,
+def _transform_w_kernel(schema_madlib, source_table, dependent_varname,
                         independent_varname, kernel_func,
-                        kernel_params, grouping_col,
+                        kernel_params, grouping_col, add_intercept=False,
                         add_origin_in_kernel_space=False):
-    if kernel_func == 'linear':
-        return None
-
     n_features = num_features(source_table, independent_varname)
     kernel_params_dict = _extract_kernel_params(kernel_params, n_features)
+    if add_intercept:
+        kernel_params_dict['fit_intercept'] = True
     transformer = create_kernel(schema_madlib, n_features,
                                 kernel_func, kernel_params_dict)
-    return (transformer.fit(n_features)
-            .transform(source_table, independent_varname,
-                       dependent_varname, grouping_col,
-                       add_origin=add_origin_in_kernel_space))
+    return (transformer.fit(n_features).
+            transform(source_table, independent_varname,
+                      dependent_varname, grouping_col,
+                      add_origin=add_origin_in_kernel_space))
 # ------------------------------------------------------------------------------
 
 
@@ -1186,18 +1184,18 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
                 "') is invalid for new_data_table (" + new_data_table + ")!")
         output_tbl_valid(output_table, 'SVM')
 
+        kernel_params_dict = _extract_kernel_params(kernel_params)
+        random_table = add_postfix(model_table, '_random')
         if kernel_func.lower() != 'linear':
-            kernel_params_dict = _extract_kernel_params(kernel_params)
-            random_table = add_postfix(model_table, '_random')
+            # random table is not created with the linear kernel
             input_tbl_valid(random_table, 'SVM')
-            transformer = load_kernel(schema_madlib, random_table,
-                                      kernel_func, kernel_params_dict)
-            transformer.transform(new_data_table, independent_varname,
-                                  grouping_col=grouping_col, id_col=id_col_name)
-            transformed_table = transformer.transformed_table
-            new_data_table = transformed_table['source_table']
-            independent_varname = transformed_table['independent_varname']
-            dependent_varname = transformed_table['dependent_varname']
+        transformer = load_kernel(schema_madlib, random_table, kernel_func, kernel_params_dict)
+        transformer.transform(new_data_table, independent_varname,
+                              grouping_col=grouping_col, id_col=id_col_name)
+        transformed_table = transformer.transformed_table
+        new_data_table = transformed_table['source_table']
+        independent_varname = transformed_table['independent_varname']
+        dependent_varname = transformed_table['dependent_varname']
 
         if method.upper() == 'SVC':
             pred_query = """

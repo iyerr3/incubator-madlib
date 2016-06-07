@@ -21,17 +21,122 @@ import plpy
 
 from utilities.utilities import unique_string, num_features
 
+import collections
+import functools
 from math import sqrt, pi, log, factorial
-from random import random, seed
-from functools import reduce
-
 import operator
-from collections import namedtuple
+from random import random, seed
 
 
-PolyRandOperator = namedtuple('PolyRandOperator',
-                              'weights, coefs, reps, '
-                              'other_features, rd_id, rd_val')
+PolyRandOperator = collections.namedtuple(
+    'PolyRandOperator', 'weights, coefs, reps, other_features, rd_id, rd_val')
+
+
+class LinearKernel(object):
+    """ Simple no-op kernel that has functionality to add an intercept to the
+    feature list and to add the origin to the dataset as part of the "kernel"
+    transformation
+    """
+    def __init__(self, schema_madlib,
+                 create_view=True, fit_intercept=False, **kwargs):
+        self.schema_madlib = schema_madlib
+        self.kernel_func = 'linear'
+        self.fit_intercept = fit_intercept
+        self.create_view = create_view
+        self.transformed_table = None
+        self.original_table = None
+
+    def clear(self):
+        if self.transformed_table:
+            data_type = 'view' if self.create_view else 'table'
+            plpy.execute("drop {data_type} if exists {rel}".
+                         format(data_type=data_type,
+                                rel=self.transformed_table))
+
+    def __del__(self):
+        self.clear()
+
+    def save_as(self, _):
+        # nothing to save in a linear kernel
+        pass
+
+    @classmethod
+    def _get_default_params(cls):
+        return {'fit_intercept': False}
+
+    @classmethod
+    def create(cls, schema_madlib, params=None):
+        if not params:
+            params = cls._get_default_params()
+        return cls(schema_madlib, **params)
+
+    @property
+    def kernel_params(self):
+        return ('fit_intercept={fit_intercept}'
+                .format(fit_intercept=self.fit_intercept))
+
+    def fit(self, _):
+        self.clear()
+        return self
+
+    def transform(self, source_table, independent_varname,
+                  dependent_varname=None, grouping_col=None, id_col=None,
+                  transformed_name='linear_transformed', add_origin=False):
+        self.original_table = self.transformed_table = \
+            dict(source_table=source_table,
+                 independent_varname=independent_varname,
+                 dependent_varname=dependent_varname)
+
+        if self.fit_intercept or add_origin:
+            schema_madlib = self.schema_madlib
+
+            def _cast_if_null(input, alias):
+                null_str = "NULL::integer"
+                if input:
+                    return str(input)
+                else:
+                    return null_str + " as " + alias if alias else null_str
+            data_type = 'VIEW' if self.create_view else 'TABLE'
+            id_col = _cast_if_null(id_col, unique_string('id_col'))
+            grouping_col = _cast_if_null(grouping_col, unique_string('grp_col'))
+            dependent_varname = _cast_if_null(dependent_varname, '')
+            features_col = unique_string(desp='features_col')
+            target_col = unique_string(desp='target_col')
+            transformed_rel = unique_string(desp='source_copied')
+            intercept_str = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
+            self.n_features = (num_features(source_table, independent_varname) +
+                               (0, 1)[self.fit_intercept])
+
+            if add_origin:
+                union_origin_sql = """ UNION
+                    SELECT {schema_madlib}.array_fill(
+                                {schema_madlib}.array_of_float({self.n_features}),
+                                0::float)::float[] as {features_col},
+                            0::float as {target_col},
+                            NULL,
+                            NULL
+                    """.format(**locals())
+            else:
+                union_origin_sql = ""
+
+            run_sql = """
+                DROP {data_type} IF EXISTS {transformed_rel};
+                CREATE {data_type} {transformed_rel} AS
+                    SELECT
+                        array_cat({intercept_str}, {independent_varname})::float[] as {features_col},
+                        {dependent_varname} as {target_col},
+                        {id_col},
+                        {grouping_col}
+                    FROM {source_table}
+                    WHERE NOT {schema_madlib}.array_contains_null({independent_varname})
+                    {union_origin_sql}
+                """.format(**locals())
+            plpy.info(run_sql)
+            plpy.execute(run_sql)
+            self.transformed_table = dict(source_table=transformed_rel,
+                                          dependent_varname=target_col,
+                                          independent_varname=features_col)
+        return self
 
 
 class PolyKernel(object):
@@ -138,7 +243,7 @@ class PolyKernel(object):
         return cls(schema_madlib, poly_operator=pro, orig_data=data, **params)
 
     @classmethod
-    def _get_default_params(n_features=10):
+    def _get_default_params(cls, n_features=10):
         return {
             'n_components': 2 * n_features,
             'fit_intercept': False,
@@ -162,7 +267,7 @@ class PolyKernel(object):
             r = min(r, n-r)
             if r == 0:
                 return 1
-            numer = reduce(operator.mul, range(n, n-r, -1))
+            numer = functools.reduce(operator.mul, range(n, n-r, -1))
             denom = factorial(r + 1)
             return numer // denom
 
@@ -270,8 +375,8 @@ class PolyKernel(object):
                             {schema_madlib}.array_of_float({n_target_features}),
                             0::float) as {features_col},
                         0 as {target_col},
-                        NULL as {id_col},
-                        NULL as {grouping_col}
+                        NULL,
+                        NULL
                 """.format(**locals())
         else:
             union_origin_sql = ""
@@ -431,7 +536,7 @@ class GaussianKernelBase(object):
             return GaussianKernel(schema_madlib, **params)
 
     @classmethod
-    def _get_default_params(n_features=10):
+    def _get_default_params(cls, n_features=10):
         return {
             'n_components': 2 * n_features,
             'fit_intercept': False,
@@ -591,8 +696,8 @@ class GaussianKernel(GaussianKernelBase):
                             {schema_madlib}.array_of_float({n_target_features}),
                             0::float) as {independent_varname},
                         0 as {dependent_varname},
-                        NULL as {id_col},
-                        NULL as {grouping_col}
+                        NULL,
+                        NULL
                 """.format(**locals())
         else:
             union_origin_sql = ""
@@ -696,8 +801,8 @@ class GaussianKernelInMemory(GaussianKernelBase):
                             {schema_madlib}.array_of_float({n_target_features}),
                             0::float) as {features_col},
                         0 as {target_col},
-                        NULL as {id_col},
-                        NULL as {grouping_col}
+                        NULL,
+                        NULL
                 """.format(**locals())
         else:
             union_origin_sql = ""
@@ -745,7 +850,7 @@ class GaussianKernelInMemory(GaussianKernelBase):
 
 def create_kernel(schema_madlib, n_features, kernel_func, kernel_params_dict):
     if kernel_func == 'linear':
-        return None
+        return LinearKernel.create(schema_madlib, kernel_params_dict)
     elif kernel_func == 'gaussian':
         return GaussianKernelBase.create(schema_madlib, n_features, kernel_params_dict)
     elif kernel_func == 'polynomial':
@@ -754,7 +859,7 @@ def create_kernel(schema_madlib, n_features, kernel_func, kernel_params_dict):
 
 def load_kernel(schema_madlib, data, kernel_func, kernel_params_dict):
     if kernel_func == 'linear':
-        return None
+        return LinearKernel.create(schema_madlib, kernel_params_dict)
     elif kernel_func == 'gaussian':
         return GaussianKernelBase.load_from(schema_madlib, data, kernel_params_dict)
     elif kernel_func == 'polynomial':
