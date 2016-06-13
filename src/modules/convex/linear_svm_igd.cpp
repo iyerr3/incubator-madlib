@@ -103,7 +103,7 @@ linear_svm_igd_transition::run(AnyType &args) {
                         state.task.dimension);
 
     // tuple weight is multiplied to the gradient update. That is equivalent to
-    // multiplying with the dependent variable
+    // multiplying the dependent variable
     tuple.depVar = args[2].getAs<double>() * tuple_weight;
 
     // Now do the transition step

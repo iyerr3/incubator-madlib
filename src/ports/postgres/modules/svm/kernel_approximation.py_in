@@ -51,7 +51,7 @@ class LinearKernel(object):
             data_type = 'view' if self.create_view else 'table'
             plpy.execute("drop {data_type} if exists {rel}".
                          format(data_type=data_type,
-                                rel=self.transformed_table))
+                                rel=self.transformed_table['source_table']))
 
     def __del__(self):
         self.clear()
@@ -91,11 +91,12 @@ class LinearKernel(object):
             schema_madlib = self.schema_madlib
 
             def _cast_if_null(input, alias):
-                null_str = "NULL::integer"
                 if input:
                     return str(input)
                 else:
+                    null_str = "NULL::text"
                     return null_str + " as " + alias if alias else null_str
+
             data_type = 'VIEW' if self.create_view else 'TABLE'
             id_col = _cast_if_null(id_col, unique_string('id_col'))
             grouping_col = _cast_if_null(grouping_col, unique_string('grp_col'))
@@ -104,10 +105,10 @@ class LinearKernel(object):
             target_col = unique_string(desp='target_col')
             transformed_rel = unique_string(desp='source_copied')
             intercept_str = "NULL" if not self.fit_intercept else "ARRAY[1]::float[]"
-            self.n_features = (num_features(source_table, independent_varname) +
-                               (0, 1)[self.fit_intercept])
 
             if add_origin:
+                self.n_features = (num_features(source_table, independent_varname) +
+                                   (0, 1)[self.fit_intercept])
                 union_origin_sql = """ UNION
                     SELECT {schema_madlib}.array_fill(
                                 {schema_madlib}.array_of_float({self.n_features}),
@@ -131,7 +132,6 @@ class LinearKernel(object):
                     WHERE NOT {schema_madlib}.array_contains_null({independent_varname})
                     {union_origin_sql}
                 """.format(**locals())
-            plpy.info(run_sql)
             plpy.execute(run_sql)
             self.transformed_table = dict(source_table=transformed_rel,
                                           dependent_varname=target_col,
@@ -354,10 +354,10 @@ class PolyKernel(object):
         schema_madlib = self.schema_madlib
 
         def _cast_if_null(input, alias):
-            null_str = "NULL"
             if input:
                 return str(input)
             else:
+                null_str = "NULL::text"
                 return null_str + " as " + alias if alias else null_str
 
         grouping_col = _cast_if_null(grouping_col, unique_string('grp_col'))
@@ -622,10 +622,10 @@ class GaussianKernel(GaussianKernelBase):
         schema_madlib = self.schema_madlib
 
         def _cast_if_null(input, alias):
-            null_str = "NULL::integer"
             if input:
                 return str(input)
             else:
+                null_str = "NULL::text"
                 return null_str + " as " + alias if alias else null_str
 
         grouping_col = _cast_if_null(grouping_col, unique_string('grp_col'))

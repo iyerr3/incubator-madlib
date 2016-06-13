@@ -246,7 +246,7 @@ def _build_output_tables(n_iters_run, model_table, args, transformer, **kwargs):
                 'lambda={lambda}, norm={norm}, n_folds={n_folds}'::text
                                                     AS reg_params,
                 count(*)::integer                   AS num_all_groups,
-                {n_failed_groups}::integer                          AS num_failed_groups,
+                {n_failed_groups}::integer          AS num_failed_groups,
                 sum(num_rows_processed)::bigint     AS total_rows_processed,
                 sum(num_rows_skipped)::bigint       AS total_rows_skipped
             FROM {model_table};
@@ -388,6 +388,8 @@ def svm_one_class(schema_madlib, source_table, model_table, independent_varname,
     """
     source_temp_rel = unique_string(desp=source_table)
     dependent_varname = unique_string(desp='dep_var')
+    if not kernel_func:
+        kernel_func = 'gaussian'
     params = params + ', class_weight=balanced'
     plpy.execute("""
         CREATE VIEW {source_temp_rel} AS
@@ -398,6 +400,7 @@ def svm_one_class(schema_madlib, source_table, model_table, independent_varname,
         dependent_varname, independent_varname, kernel_func,
         kernel_params, grouping_col, params, True,
         verbose, add_intercept=True, add_origin_in_kernel_space=True)
+    plpy.execute("DROP VIEW IF EXISTS " + source_temp_rel)
 
 
 def get_svc_params_usage_string():
@@ -903,7 +906,7 @@ def svm_help(schema_madlib, message, is_svc, **kwargs):
         return summary
     elif message.lower() in ('usage', 'help', '?'):
         return usage
-    elif message.lower() == 'example':
+    elif message.lower() in ('example', 'examples'):
         return example_usage
     elif message.lower() == 'params':
         return params_usage
@@ -926,7 +929,7 @@ def svm(schema_madlib, source_table, model_table,
     Executes the linear support vector classification algorithm.
     """
     # verbosing
-    verbosity_level = "info" if verbose else "error"
+    verbosity_level = "warning" if verbose else "error"
     with MinWarning(verbosity_level):
         _verify_table(source_table, model_table,
                       dependent_varname, independent_varname)
@@ -1155,12 +1158,8 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
         # read necessary info from summary
         summary = plpy.execute("""
                 SELECT
-                    method,
-                    dependent_varname,
-                    independent_varname,
-                    kernel_func,
-                    kernel_params,
-                    grouping_col
+                    method, dependent_varname, independent_varname,
+                    kernel_func, kernel_params, grouping_col
                 FROM {summary_table}
                 """.format(**locals()))[0]
         method = summary['method']
@@ -1187,9 +1186,11 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
         kernel_params_dict = _extract_kernel_params(kernel_params)
         random_table = add_postfix(model_table, '_random')
         if kernel_func.lower() != 'linear':
-            # random table is not created with the linear kernel
+            # random table is not created with the linear kernel and ignored
+            # in the load_kernel call, we disable the check for that table
             input_tbl_valid(random_table, 'SVM')
-        transformer = load_kernel(schema_madlib, random_table, kernel_func, kernel_params_dict)
+        transformer = load_kernel(schema_madlib, random_table,
+                                  kernel_func, kernel_params_dict)
         transformer.transform(new_data_table, independent_varname,
                               grouping_col=grouping_col, id_col=id_col_name)
         transformed_table = transformer.transformed_table
@@ -1197,6 +1198,9 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
         independent_varname = transformed_table['independent_varname']
         dependent_varname = transformed_table['dependent_varname']
 
+        pred_dist = """{0}.array_dot(coef::double precision [],
+                                     {1}::double precision [])
+                    """.format(schema_madlib, independent_varname)
         if method.upper() == 'SVC':
             pred_query = """
                         CASE WHEN {schema_madlib}.array_dot(
@@ -1209,12 +1213,7 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
                         """.format(schema_madlib=schema_madlib,
                                    independent_varname=independent_varname)
         elif method.upper() == 'SVR':
-            pred_query = """
-                        {schema_madlib}.array_dot(
-                                coef::double precision [],
-                                {independent_varname}::double precision [])
-                        """.format(schema_madlib=schema_madlib,
-                                   independent_varname=independent_varname)
+            pred_query = pred_dist
         else:
             plpy.error("SVM Error: Invalid 'method' value in summary table. "
                        "'method' can only be SVC or SVR!")
@@ -1225,6 +1224,7 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
             SELECT
                 {id_col_name} AS {id_col_name},
                 {pred_query} AS prediction,
+                {pred_dist} AS decision_function,
                 ARRAY[{grouping_str}] as grouping_col,
                 {grouping_col}
             FROM {model_table}
@@ -1238,7 +1238,8 @@ def svm_predict(schema_madlib, model_table, new_data_table, id_col_name,
             CREATE TABLE {output_table} AS
             SELECT
                 {id_col_name} AS {id_col_name},
-                {pred_query} as prediction
+                {pred_query} as prediction,
+                {pred_dist} AS decision_function
             FROM
                 {model_table},
                 {new_data_table}

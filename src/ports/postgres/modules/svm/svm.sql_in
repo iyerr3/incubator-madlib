@@ -394,7 +394,7 @@ resulting \e init_stepsize can be run on the whole dataset.
 </DD>
 
 <DT>lambda</dt>
-<DD>Default: [0.01]. Regularization parameter.  Must be positive, can’t be 0.
+<DD>Default: [0.01]. Regularization parameter.  Must be non-negative.
 </DD>
 
 <DT>norm</dt>
@@ -1224,7 +1224,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_classification (
     message  TEXT
 ) RETURNS TEXT AS $$
     PythonFunctionBodyOnly(svm, svm)
-    svm.svm_help(schema_madlib, message, True)
+    return svm.svm_help(schema_madlib, message, True)
 $$ LANGUAGE plpythonu
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
@@ -1238,7 +1238,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_one_class (
     message  TEXT
 ) RETURNS TEXT AS $$
     PythonFunctionBodyOnly(svm, svm)
-    svm.svm_one_class_help(schema_madlib, message, True)
+    return svm.svm_one_class_help(schema_madlib, message, True)
 $$ LANGUAGE plpythonu
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
@@ -1252,12 +1252,12 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_regression (
     message  TEXT
 ) RETURNS TEXT AS $$
     PythonFunctionBodyOnly(svm, svm)
-    svm.svm_help(schema_madlib, message, False)
+    return svm.svm_help(schema_madlib, message, False)
 $$ LANGUAGE plpythonu
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `NO SQL', `');
 
 CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.svm_regression ()
 RETURNS TEXT AS $$
-  SELECT MADLIB_SCHEMA.svm_regression(NULL::TEXT)
+  SELECT MADLIB_SCHEMA.svm_regression(''::TEXT)
 $$ LANGUAGE SQL IMMUTABLE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `CONTAINS SQL', `');

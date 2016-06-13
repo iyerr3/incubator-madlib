@@ -524,7 +524,9 @@ SELECT svm_regression(
      'm1',
      'label',
      'ind',
-     NULL,NULL,NULL,
+     'poly',
+      NULL,
+      NULL,
      'init_stepsize=0.01, max_iter=3, lambda=[0.0002, 0.2], '
      'n_folds=3, epsilon = [0.003, 0.2]',
      true);
