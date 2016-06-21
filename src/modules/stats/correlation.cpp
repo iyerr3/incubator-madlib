@@ -63,7 +63,7 @@ correlation_merge_states::run(AnyType& args) {
     MutableNativeMatrix state1 = args[0].getAs<MutableNativeMatrix>();
     MappedMatrix state2 = args[1].getAs<MappedMatrix>();
 
-    triangularView<Upper>(state1) += state2;
+    state1 += state2;
     return state1;
 }
 
@@ -75,9 +75,9 @@ correlation_final::run(AnyType& args) {
 
     Matrix denom(state.rows(), state.cols());
     ColumnVector sqrt_of_diag = state.diagonal().cwiseSqrt();
-    triangularView<Upper>(denom) = sqrt_of_diag * trans(sqrt_of_diag);
+    denom = sqrt_of_diag * trans(sqrt_of_diag);
 
-    triangularView<Upper>(state) = state.cwiseQuotient(denom);
+    state = state.cwiseQuotient(denom);
     state.diagonal().setOnes();
 
     return state;

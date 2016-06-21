@@ -248,7 +248,7 @@ def _populate_output_table(schema_madlib, source_table, output_table,
                 SELECT
                     *
                 FROM
-                    {schema_madlib}.__deconstruct_lower_triangle(
+                    {schema_madlib}.deconstruct_2d_array(
                         (SELECT cor_mat FROM {temp_table})
                     )
                     AS deconstructed(column_position integer, {variable_list_str})
