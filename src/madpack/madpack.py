@@ -355,14 +355,24 @@ def _get_rev_num(rev):
     """
     Convert version string into number for comparison
         @param rev version text
+                It is expected to follow Semantic Versioning (semver.org)
+                Valid inputs:
+                    1.9.0, 1.10.0, 2.5.0
+                    1.0.0-alpha, 1.0.0-alpha.1, 1.0.0-0.3.7, 1.0.0-x.7.z.92
+
     """
     try:
-        num = re.findall('[0-9]', rev)
+        rev_parts = rev.split('-')  # text to the right of - is treated as single str
+        num = list(rev_parts[0].split('.'))
+        num += ['0'] * (3 - len(num))  # normalize num to be of length 3
+        if len(rev_parts) > 1:
+            num.append(rev_parts[1])
         if num:
             return num
         else:
             return ['0']
     except:
+        # invalid revision
         return ['0']
 # ------------------------------------------------------------------------------
 
@@ -736,7 +746,7 @@ def _db_create_objects(schema, old_schema, upgrade=False, sc=None, testcase="",
     try:
         _info("> Writing version info in MigrationHistory table", True)
         _internal_run_query("INSERT INTO %s.migrationhistory(version) "
-                       "VALUES('%s')" % (schema, rev), True)
+                            "VALUES('%s')" % (schema, rev), True)
     except:
         _error("Cannot insert data into %s.migrationhistory table" % schema, False)
         raise Exception
@@ -1234,7 +1244,9 @@ def main(argv):
             return
 
         # Create install-check user
-        test_user = 'madlib_' + rev.replace('.', '') + '_installcheck'
+        test_user = ('madlib_' +
+                     rev.replace('.', '').replace('-', '_') +
+                     '_installcheck')
         try:
             _internal_run_query("DROP USER IF EXISTS %s;" % (test_user), False)
         except:
