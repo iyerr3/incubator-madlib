@@ -4,6 +4,8 @@ import re
 import time
 import random
 from distutils.util import strtobool
+from validate_args import _get_table_schema_names
+from validate_args import get_first_schema
 
 if __name__ != "__main__":
     import plpy
@@ -17,7 +19,7 @@ def _assert(condition, msg):
     """
     if not condition:
         plpy.error(msg)
-# ========================================================================
+# ------------------------------------------------------------------------------
 
 
 def warn(condition, msg):
@@ -28,6 +30,39 @@ def warn(condition, msg):
     """
     if not condition:
         plpy.warning(msg)
+# ------------------------------------------------------------------------------
+
+
+def get_distribution_policy(source_table):
+    """ Return a list of columns that define the distribution policy of source_table
+    Args:
+        @param source_table
+
+    Returns:
+        List of str.
+    """
+    _, table_name = _get_table_schema_names(source_table)
+    schema_name = get_first_schema(source_table)
+    dist_attr = plpy.execute("""
+    SELECT array_agg(pga.attname) as dist_attr
+    FROM (
+        SELECT gdp.localoid,
+                 CASE
+                     WHEN ( ARRAY_UPPER(gdp.attrnums, 1) > 0 ) THEN
+                        UNNEST(gdp.attrnums)
+                     ELSE NULL
+                 END AS attnum
+            FROM gp_distribution_policy gdp
+        ) AS distkey
+        INNER JOIN pg_class AS pgc
+        ON distkey.localoid = pgc.oid AND pgc.relname = '{table_name}'
+        INNER JOIN pg_namespace pgn
+        ON pgc.relnamespace = pgn.oid AND pgn.nspname = '{schema_name}'
+        LEFT OUTER JOIN pg_attribute pga
+        ON distkey.attnum = pga.attnum AND distkey.localoid = pga.attrelid
+    """.format(table_name=table_name, schema_name=schema_name))[0]["dist_attr"]
+    return dist_attr
+# ------------------------------------------------------------------------------
 
 
 def get_seg_number():
@@ -41,7 +76,7 @@ def get_seg_number():
         WHERE role = 'p'
         """)[0]['count']
     !>)
-# ------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def is_orca():
@@ -51,7 +86,12 @@ def is_orca():
     !>, <!
     return False
     !>)
-# -------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+
+
+def is_platform_pg():
+    return m4_ifdef(<!__POSTGRESQL__!>, <!True!>, <!False!>)
+# ------------------------------------------------------------------------------
 
 
 def num_features(source_table, independent_varname):
@@ -59,13 +99,13 @@ def num_features(source_table, independent_varname):
                         "FROM {1} LIMIT 1"
                         .format(independent_varname,
                                 source_table))[0]['dim']
-# ------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def num_samples(source_table):
     return plpy.execute("SELECT count(*) AS n FROM {0}"
                         .format(source_table))[0]['n']
-# ------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def unique_string(desp='', **kwargs):
@@ -78,7 +118,7 @@ def unique_string(desp='', **kwargs):
     r3 = int(time.time()) % random.randint(1, 100000000)
     u_string = "__madlib_temp_" + desp + str(r1) + "_" + str(r2) + "_" + str(r3) + "__"
     return u_string
-# -------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def add_postfix(quoted_string, postfix):
@@ -401,7 +441,7 @@ def _string_to_sql_array(schema_madlib, s, **kwargs):
     for i in range(len(elm)):
         elm[i] = elm[i].strip("\"")
     return array_to_string(elm)
-# ========================================================================
+# ------------------------------------------------------------------------
 
 
 def current_user():

@@ -1,0 +1,192 @@
+# coding=utf-8
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Please refer to the encode_categorical.sql_in file for the documentation
+
+"""
+@file encode_categorical.py_in
+
+"""
+import plpy
+from utilities import _assert
+from utilities import strip_end_quotes
+from utilities import get_distribution_policy
+from utilities import is_platform_pg
+
+from validate_args import table_exists
+from validate_args import columns_exist_in_table
+from validate_args import table_is_empty
+
+
+def encode_categorical_variables(
+        schema_madlib, source_table, output_table, categorical_cols,
+        categorical_cols_to_exclude=None,
+        row_id=None,
+        top=None,
+        value_to_drop=None,
+        keep_null=False,
+        array_output=None,
+        output_col_dictionary=False,
+        distributed_by=None,
+        **kwargs):
+    """
+    Main function to encode categorical variables
+    Args:
+        @param source_table:str, Name of table containing categorical variable
+        @param output_table:str, Name of table to output dummy variables
+        @param categorical_cols:str, Comma-separated list of column names to dummy code (can be '*')
+        @param categorical_cols_to_exclude:str, Comma-separated list of column names to exclude (if categorical_cols = '*')
+        @param row_id: str, Columns from source table to index output table
+        @param top: str, Parameter to include only top values of a categorical variable
+        @param value_to_drop: str, Parameter to set reference column in dummy coding
+        @param keep_null: bool, If True, NULL is treated as a categorical value
+        @param array_output: str, Parameter to determine if output should be in an array or columns
+        @param output_col_dictionary: bool, If True columns names are simplified and
+                    a separate mapping table is created to understand the names
+        @param distributed_by: str, Comma-separated list of column names to use for distribution of output
+
+
+    """
+    args = locals()
+
+    # args is updated with processed values of parameters
+    # for params that have updates, a new key is added with '_' in front of the
+    # original variable name. See function for list of new variables
+
+    # _parse_all_parameters(args)
+
+    # _validate_parameters(args)
+
+    # cols = args['_categorical_cols']
+    cols = categorical_cols
+
+    sql_list = ["CREATE TABLE " + output_table + " AS (SELECT *"]
+    for col in cols:
+        col_no_quotes = strip_end_quotes(col.strip())
+        distinct_values = plpy.execute(
+            "SELECT {col} AS value FROM {source_table} "
+            "GROUP BY {col} ORDER BY {col}".
+            format(col=col, source_table=source_table))
+        distinct_values = [strip_end_quotes(item['value']) for item in distinct_values]
+        null_wrap_case_str = ""
+        null_wrap_end_str = ""
+        if not keep_null and None in distinct_values:
+            null_wrap_case_str = "CASE WHEN \"{col}\" is NULL THEN NULL ELSE "
+            null_wrap_end_str = "END"
+        case_str = ("({wrap_case} "
+                    "CASE WHEN \"{{col}}\" = '{{value}}' THEN 1 ELSE 0 END "
+                    "{wrap_end}) AS \"{{col}}_{{value}}\"".
+                    format(wrap_case=null_wrap_case_str,
+                           wrap_end=null_wrap_end_str))
+        sql_list.append(
+            ", " +
+            ', '.join("{case_str}".
+                      format(case_str=case_str).
+                      format(col=col_no_quotes, value=str(value))
+                      for value in distinct_values if value is not None))
+        if keep_null and None in distinct_values:
+            sql_list.append(", (CASE WHEN \"{0}\" IS NULL THEN 1 ELSE 0 END) "
+                            "as \"{0}_NULL\"".format(col_no_quotes))
+    sql_list.append(" FROM " + source_table + ") ")
+    if is_platform_pg:
+        if distributed_by:
+            dist_str = distributed_by
+        else:
+            dist_str = ','.join(['"%s"' % i for i in get_distribution_policy(schema_madlib, source_table)
+                                 if i is not None])
+        if dist_str:
+            sql_list.append("distributed by (" + dist_str + ")")
+        else:
+            sql_list.append("distributed randomly")
+    plpy.execute(''.join(sql_list))
+    return None
+# ---------------------------------------------------------------
+
+
+def validate_dummy_coding(source_table, output_table, cols):
+    """
+    Args:
+        @param source_table The original data table
+        @param output_table    The output table that will contain dummy columns
+        @param cols         An array of categorical column names
+    """
+    _assert(output_table and
+            output_table.strip().lower() not in ('null', ''),
+            "Invalid output table name!")
+    _assert(not table_exists(output_table),
+            "Output table already exists!")
+    _assert(source_table and source_table.strip().lower() not in ('null', ''),
+            "Invalid data table name!")
+    _assert(table_exists(source_table),
+            "Data table ({0}) is missing!". format(source_table))
+    _assert(not table_is_empty(source_table),
+            "Data table ({0}) is empty!". format(source_table))
+    _assert(columns_exist_in_table(source_table, cols),
+            "Not all columns from {0} present in source table ({1})"
+            .format(cols, source_table))
+# ------------------------------------------------------------------------------
+
+
+def indicator_variables_help(schema_madlib, message, **kwargs):
+    """
+    Help function for encode_categorical_variables
+
+    Args:
+        @param schema_madlib
+        @param message: string, Help message string
+        @param kwargs
+
+    Returns:
+        String. Help/usage information
+    """
+    if not message:
+        help_string = """
+-----------------------------------------------------------------------
+                            SUMMARY
+-----------------------------------------------------------------------
+Provide functionality to create indicator variables from categorical variables
+to be used by regression methods. Categorical variables require special
+attention in regression analysis because, unlike dichotomous or continuous
+variables, they cannot by entered into the regression equation just as they are.
+For example, if you have a variable called race that is coded 1 = Hispanic, 2 =
+Asian 3 = Black 4 = White, then entering race in your regression will look at
+the linear effect of race, which is probably not what you intended. Instead,
+categorical variables like this need to be recoded into a series of indicator
+variables which can then be entered into the regression model.
+
+For more details on function usage:
+    SELECT {schema_madlib}.encode_categorical_variables('usage')
+            """
+    elif message in ['usage', 'help', '?']:
+        help_string = """
+-----------------------------------------------------------------------
+                            USAGE
+-----------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------
+                            OUTPUT
+-----------------------------------------------------------------------
+
+"""
+    else:
+        help_string = "No such option. Use {schema_madlib}.encode_categorical_variables()"
+
+    return help_string.format(schema_madlib=schema_madlib)
+# ---------------------------------------------------------------------
