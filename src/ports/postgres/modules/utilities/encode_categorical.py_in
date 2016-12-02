@@ -26,6 +26,7 @@
 import plpy
 from utilities import _assert
 from utilities import strip_end_quotes
+from utilities import split_quoted_delimited_str
 from utilities import get_distribution_policy
 from utilities import is_platform_pg
 
@@ -56,7 +57,7 @@ def encode_categorical_variables(
         @param top: str, Parameter to include only top values of a categorical variable
         @param value_to_drop: str, Parameter to set reference column in dummy coding
         @param keep_null: bool, If True, NULL is treated as a categorical value
-        @param array_output: str, Parameter to determine if output should be in an array or columns
+        @param array_output: bool, Parameter to determine if output should be in an array or columns
         @param output_col_dictionary: bool, If True columns names are simplified and
                     a separate mapping table is created to understand the names
         @param distributed_by: str, Comma-separated list of column names to use for distribution of output
@@ -69,12 +70,14 @@ def encode_categorical_variables(
     # for params that have updates, a new key is added with '_' in front of the
     # original variable name. See function for list of new variables
 
+    # 1. Parse and validate all arguments per the options detailed in user doc
     # _parse_all_parameters(args)
-
     # _validate_parameters(args)
 
     # cols = args['_categorical_cols']
-    cols = categorical_cols
+    cols = split_quoted_delimited_str(categorical_cols)
+
+    # values = get_top_distinct_values(cols)
 
     sql_list = ["CREATE TABLE " + output_table + " AS (SELECT *"]
     for col in cols:
@@ -104,11 +107,14 @@ def encode_categorical_variables(
             sql_list.append(", (CASE WHEN \"{0}\" IS NULL THEN 1 ELSE 0 END) "
                             "as \"{0}_NULL\"".format(col_no_quotes))
     sql_list.append(" FROM " + source_table + ") ")
-    if is_platform_pg:
+
+    # sql_list.append(_get_distribution_str())
+
+    if not is_platform_pg:
         if distributed_by:
             dist_str = distributed_by
         else:
-            dist_str = ','.join(['"%s"' % i for i in get_distribution_policy(schema_madlib, source_table)
+            dist_str = ','.join(['"%s"' % i for i in get_distribution_policy(source_table)
                                  if i is not None])
         if dist_str:
             sql_list.append("distributed by (" + dist_str + ")")
