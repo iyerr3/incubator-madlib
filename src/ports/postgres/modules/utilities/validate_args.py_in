@@ -2,11 +2,6 @@
 import plpy
 import re
 import string
-from utilities import __mad_version
-
-
-version_wrapper = __mad_version()
-_string_to_array = version_wrapper.select_vecfunc()
 
 # Postgresql naming restrictions
 """
@@ -117,8 +112,8 @@ def _get_table_schema_names(tbl, only_first_schema=False):
             # restricted to the first schema in search path
             all_schemas = [plpy.execute("SELECT current_schema() AS cs")[0]["cs"]]
         else:
-            all_schemas = _string_to_array(plpy.execute(
-                "SELECT current_schemas(True) ""AS cs")[0]["cs"])
+            all_schemas = plpy.execute(
+                "SELECT current_schemas(True) ""AS cs")[0]["cs"]
         schema_str = "('{0}')".format("','".join(unquote_ident(s)
                                                  for s in all_schemas))
         table = unquote_ident(names[0])
@@ -241,20 +236,18 @@ def get_first_schema(table_name):
         return unquote_ident(names[0])
 
     # create a list of schema names in search path
-    # _string_to_array is used for GPDB versions less than 4.2 where an array
-    # is returned to Python as a string
-    current_schemas = _string_to_array(plpy.execute(
-        "SELECT current_schemas(True) AS cs")[0]["cs"])
+    current_schemas = plpy.execute(
+        "SELECT current_schemas(True) AS cs")[0]["cs"]
 
     if not current_schemas:
         return None
 
     # get all schemas that contain a table with this name
-    schemas_w_table = _string_to_array(plpy.execute(
+    schemas_w_table = plpy.execute(
         """SELECT array_agg(table_schema::text) AS schemas
            FROM information_schema.tables
            WHERE table_name='{table_name}'""".
-        format(table_name=table_name))[0]["schemas"])
+        format(table_name=table_name))[0]["schemas"]
 
     if not schemas_w_table:
         return None
@@ -313,7 +306,7 @@ def get_cols_and_types(tbl):
         @param tbl: string, Name of the table to search in
 
     Returns:
-        Dictionary. Key is the column name and the Value is the data type
+        List. Contains list of pair (col, type)
 
     The data type returned will be the type name if it is a built-in type, or
     'ARRAY' if it is some array. For any other case it will be 'USER-DEFINED'.
@@ -343,8 +336,8 @@ def get_cols_and_types(tbl):
                     AND table_schema = '{schema}'
                 """.format(table=table, schema=schema)
     result = plpy.execute(sql_string)[0]
-    col_names = _string_to_array(result['cols'])
-    col_types = _string_to_array(result['types'])
+    col_names = result['cols']
+    col_types = result['types']
     return list(zip(col_names, col_types))
 # -------------------------------------------------------------------------
 

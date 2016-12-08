@@ -4,10 +4,10 @@ import re
 import time
 import random
 from distutils.util import strtobool
-from validate_args import _get_table_schema_names
-from validate_args import get_first_schema
 
 if __name__ != "__main__":
+    from validate_args import _get_table_schema_names
+    from validate_args import get_first_schema
     import plpy
 
 
@@ -495,7 +495,7 @@ def preprocess_keyvalue_params(input_params, split_char='='):
 
 
 def extract_keyvalue_params(input_params,
-                            input_param_types,
+                            input_param_types=None,
                             default_values=None,
                             split_char='='):
     """ Extract key value pairs from input parameters or set the default values
@@ -539,28 +539,34 @@ def extract_keyvalue_params(input_params,
         param_value = items[1].strip()
         if not param_name or param_name in ('none', 'null'):
             plpy.error("Invalid input param name: {0} ".format(str(param_name)))
-        try:
-            param_type = input_param_types[param_name]
-        except KeyError:
-            raise KeyError("Invalid input: {0} is not a valid parameter".
-                           format(param_name))
-        try:
-            if param_type in (int, str, float):
-                parameter_dict[param_name] = param_type(param_value)
-            elif param_type == list:
-                parameter_dict[param_name] = split_quoted_delimited_str(
-                    param_value.strip('[](){} '))
-            elif param_type == bool:
-                #  True values are y, yes, t, true, on and 1;
-                #  False values are n, no, f, false, off and 0.
-                #  Raises ValueError if anything else.
-                parameter_dict[param_name] = bool(strtobool(param_value))
-            else:
-                raise TypeError("Invalid input: {0} has unsupported type".
-                                format(param_name))
-        except ValueError:
-            raise ValueError("Invalid input: {0} must be {1}".
-                             format(param_name, str(param_type)))
+
+        if input_param_types:
+            try:
+                param_type = input_param_types[param_name]
+            except KeyError:
+                raise KeyError("Invalid input: {0} is not a valid parameter".
+                               format(param_name))
+            try:
+                if param_type in (int, str, float):
+                    parameter_dict[param_name] = param_type(param_value)
+                elif param_type == list:
+                    parameter_dict[param_name] = split_quoted_delimited_str(
+                        param_value.strip('[](){} '))
+                elif param_type == bool:
+                    #  True values are y, yes, t, true, on and 1;
+                    #  False values are n, no, f, false, off and 0.
+                    #  Raises ValueError if anything else.
+                    parameter_dict[param_name] = bool(strtobool(param_value))
+                else:
+                    raise TypeError("Invalid input: {0} has unsupported type".
+                                    format(param_name))
+            except ValueError:
+                raise ValueError("Invalid input: {0} must be {1}".
+                                 format(param_name, str(param_type)))
+        else:
+            # if input parameter types not provided then just return all as string
+            parameter_dict[param_name] = str(param_value)
+
     return parameter_dict
 # -------------------------------------------------------------------------
 
@@ -650,6 +656,9 @@ class UtilitiesTestCase(unittest.TestCase):
         self.assertEqual({'max_iter': 10, 'optimizer': '"irls"', 'precision': 0.02,
                           'lambda': ['1', '2', '3', '4']},
                          extract_keyvalue_params(self.optimizer_params4, self.optimizer_types))
+        self.assertEqual({'max_iter': '10', 'optimizer': '"irls"', 'precision': '0.02',
+                          'lambda': '{1,2,3,4}'},
+                         extract_keyvalue_params(self.optimizer_params4))
         self.assertRaises(ValueError,
                           extract_keyvalue_params, self.optimizer_params2, self.optimizer_types)
 

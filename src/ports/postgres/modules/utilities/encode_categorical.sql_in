@@ -78,7 +78,7 @@ encode_categorical_variables (
         value_to_drop,                  -- Optional
         keep_null,                      -- Optional
         array_output,                   -- Optional
-        output_col_dictionary,          -- Optional
+        output_dictionary,              -- Optional
         distributed_by                  -- Optional
 )
 </pre>
@@ -158,7 +158,7 @@ encode_categorical_variables (
     specific columns
     </dd>
 
-    <dt>output_col_dictionary (optional)</dt>
+    <dt>output_dictionary (optional)</dt>
     <dd>BOOLEAN. default: FALSE.
     This parameter is used to handle auto-generated column names that exceed the
     PostgreSQL limit of 63 bytes.
@@ -301,7 +301,7 @@ select * from abalone_out;
  * @param value_to_drop Parameter to set reference column in dummy coding
  * @param keep_null Boolean to determine the behavior for rows with NULL value
  * @param array_output Boolean to determine if output should be in an array or columns
- * @param output_col_dictionary Boolean to simplify column naming and with a separate
+ * @param output_dictionary Boolean to simplify column naming and with a separate
  *                              mapping table to actual values
  * @param distributed_by Comma-separated list of column names to use for distribution of output
  *
@@ -323,7 +323,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.encode_categorical_variables(
     value_to_drop                   VARCHAR,
     keep_null                       BOOLEAN,
     array_output                    BOOLEAN,
-    output_col_dictionary           BOOLEAN,
+    output_dictionary               BOOLEAN,
     distributed_by                  VARCHAR
 ) RETURNS VOID AS $$
     PythonFunction(utilities, encode_categorical, encode_categorical_variables)
@@ -342,7 +342,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.encode_categorical_variables(
     value_to_drop                   VARCHAR,
     keep_null                       BOOLEAN,
     array_output                    BOOLEAN,
-    output_col_dictionary           BOOLEAN
+    output_dictionary               BOOLEAN
 ) RETURNS VOID AS $$
     PythonFunction(utilities, encode_categorical, encode_categorical_variables)
 $$ LANGUAGE plpythonu
