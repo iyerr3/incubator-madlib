@@ -36,6 +36,7 @@ from validate_args import table_exists
 from validate_args import columns_exist_in_table
 from validate_args import table_is_empty
 from validate_args import unquote_ident
+from validate_args import quote_ident
 from validate_args import get_cols_and_types
 
 import math
@@ -174,14 +175,16 @@ class CategoricalEncoder(object):
     def _validate_parameters(self):
         _assert(self.output_table and
                 self.output_table.strip().lower() not in ('null', ''),
-                "Encoding categorial: Invalid output table name!")
-        _assert(not table_exists(self.output_table), "Encoding categorial: Output table already exists!")
+                "Encoding categorial: Invalid output table name")
+        _assert(not table_exists(self.output_table), "Encoding categorial: Output table already exists")
+        _assert(not table_exists(add_postfix(self.output_table, "_dictionary")),
+                "Encoding categorial: Output dictionary table already exists")
         _assert(self.source_table and self.source_table.strip().lower() not in ('null', ''),
-                "Encoding categorial: Invalid data table name!")
+                "Encoding categorial: Invalid data table name")
         _assert(table_exists(self.source_table),
-                "Encoding categorial: Data table ({0}) is missing!". format(self.source_table))
+                "Encoding categorial: Data table ({0}) is missing". format(self.source_table))
         _assert(not table_is_empty(self.source_table),
-                "Encoding categorial: Data table ({0}) is empty!". format(self.source_table))
+                "Encoding categorial: Data table ({0}) is empty". format(self.source_table))
         _assert(columns_exist_in_table(self.source_table, self._categorical_cols),
                 "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
                 .format(self._categorical_cols, self.source_table))
@@ -294,6 +297,17 @@ class CategoricalEncoder(object):
     # ----------------------------------------------------------------------
 
     def _build_output_dictionary(self, col_to_values):
+        """ Create a mapping between column names in output table and their
+        corresponding meaning"""
+
+        def _get_value_name(v):
+            if v is None:
+                return "NULL"
+            elif isinstance(v, (list, tuple)):
+                return ",".join([_get_value_name(i) for i in v])
+            else:
+                return str(v)
+
         dict_tbl_name = add_postfix(self.output_table, "_dictionary")
         plpy.execute("""
             CREATE TABLE {tbl} (
@@ -308,14 +322,11 @@ class CategoricalEncoder(object):
                 encoded_col_name = "__encoded_variables__"
             else:
                 encoded_col_name = '"{col}_{seq}"'
-            value_names = {type(None): lambda x: 'NULL',
-                           list: lambda x: ",".join([value_names[type(i)](i) for i in x]),
-                           str: str}
-            insert_template = "('%s', {seq}, '{col}', '{value_str}')" % (encoded_col_name)
+            insert_template = "('%s', {seq}, '{col}', '{value_str}'::TEXT)" % (encoded_col_name)
             insert_values = [insert_template.
                              format(col=col,
                                     seq=seq + 1,
-                                    value_str=value_names[type(v)](v))
+                                    value_str=_get_value_name(v))
                              for seq, v in enumerate(values)]
             plpy.execute("""INSERT INTO {tbl} VALUES {insert_str} """.
                          format(tbl=dict_tbl_name,
@@ -333,10 +344,10 @@ class CategoricalEncoder(object):
 
         # common columns to exclude (currently disabled)
         other_col_set = set(self._row_id_cols)
-        other_col_set |= set(plpy.quote_ident(i) for i in self._row_id_cols)
+        other_col_set |= set(quote_ident(i) for i in self._row_id_cols)
 
         exclude_set = set(self._categorical_cols_to_exclude)
-        exclude_set |= set(plpy.quote_ident(i) for i in self._row_id_cols)
+        exclude_set |= set(quote_ident(i) for i in self._row_id_cols)
 
         if not self._categorical_cols:
             feature_set = set(self._cat_features) - exclude_set - other_col_set
