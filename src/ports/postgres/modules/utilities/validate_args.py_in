@@ -306,7 +306,9 @@ def get_cols_and_types(tbl):
         @param tbl: string, Name of the table to search in
 
     Returns:
-        List. Contains list of pair (col, type)
+        List. Contains list of pair (col, type). The output is a list instead
+        of a dictionary since the columns are ordered in 'tbl' and this result
+        maintains that order.
 
     The data type returned will be the type name if it is a built-in type, or
     'ARRAY' if it is some array. For any other case it will be 'USER-DEFINED'.

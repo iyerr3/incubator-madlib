@@ -89,30 +89,30 @@ encode_categorical_variables (
 
     <dt>output_table</dt>
     <dd>VARCHAR. Name of the result table.
-    Note: If there is an index in the source_table specified by the parameter
+    Note: If there are index columns in the source_table specified by the parameter
     <em>row_id</em>, then the output table will contain only the index <em>row_id</em> and the
-    encoded columns.  If the parameter <em>row_id</em> is not specified, then all columns
-    from the source_table will be included in output_table, with the
-    exception of the original categorical column(s).
+    encoded columns.  If the parameter <em>row_id</em> is not specified, then all columns,
+    other than the original encoded columns, from the source_table will be included.
     </dd>
 
     <dt>categorical_cols</dt>
     <dd>VARCHAR. Comma-separated string of column names of categorical variables to encode.
     Can also be '*' implying all columns are to be encoded (except the ones
-    included in categorical_cols_to_exclude). Please note that all Boolean,
+    specified in categorical_cols_to_exclude). Please note that all Boolean,
     integer and text columns are considered categorical columns and will be
-    encoded if you select ‘*’.
+    encoded for ‘*’ argument.
     </dd>
 
     <dt>categorical_cols_to_exclude (optional)</dt>
     <dd>VARCHAR. Comma-separated string of column names to exclude from the
-    categorical variables to encode.
+    categorical variables to encode. Applicable only if 'categorical_cols' = '*'.
     </dd>
 
     <dt>row_id (optional)</dt>
     <dd>VARCHAR. Comma-separated column name(s) corresponding to the primary key(s) of the
     source table. This parameter determines the format of the output_table as
-    described above.
+    described above. If 'categorical_cols' = '*', then these columns will be
+    excluded from encoding (but will be included in the output table).
     </dd>
 
     <dt>top (optional)</dt>

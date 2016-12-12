@@ -30,6 +30,7 @@ from utilities import strip_end_quotes
 from utilities import split_quoted_delimited_str
 from utilities import extract_keyvalue_params
 from utilities import add_postfix
+from utilities import is_platform_pg
 
 from validate_args import table_exists
 from validate_args import columns_exist_in_table
@@ -37,6 +38,7 @@ from validate_args import table_is_empty
 from validate_args import unquote_ident
 from validate_args import get_cols_and_types
 
+import math
 
 # If there are more than 1600 columns for the output table,
 # it might lead to a database error.
@@ -74,51 +76,44 @@ class CategoricalEncoder(object):
         self.output_dictionary = output_dictionary
         self.distributed_by = distributed_by
 
-        self._name_others_col = "_LOW_FREQ_"
+        self._name_others_col = "__MISC__"
+        self._array_out_name = "__encoded_variables__"
 
-        # create new parameters after parsing inputs
+        # create new parameters after validating and parsing inputs
         # (order of below statements is relevant)
-        self._output_dictionary = True if self.array_output else self.output_dictionary
+        self._parse_parameters()
+        self._validate_parameters()
+
         self._populate_features()
-
-        # row_id
-        self._row_id_cols = split_quoted_delimited_str(self.row_id)
-
-        # categorical_cols
         self._output_cols = self._get_cols_to_encode()
         if not self._output_cols:
             plpy.error("No categorical columns available to encode (or all have been excluded)")
 
-        # value_to_drop
-        if self.value_to_drop:
-            self._value_to_drop = extract_keyvalue_params(self.value_to_drop)
-            if not self._value_to_drop:
-                # for single column, the value_to_drop can be provided without '='
-                self._value_to_drop = dict([(self._output_cols[0].strip(' "'),
-                                             self.value_to_drop)])
-        else:
-            self._value_to_drop = {}
+        self._parse_dictlike_parameters()
     # ----------------------------------------------------------------------
 
     def build_output_table(self):
-
-        distinct_values = self._get_top_distinct_values()
+        if self._top:
+            distinct_values = self._get_top_values()
+        else:
+            distinct_values = self._get_distinct_values()
         updated_distinct_values = self._drop_values(distinct_values)
         categorical_col_str = self._build_encoding_str(updated_distinct_values)
         if self._output_dictionary:
             self._build_output_dictionary(updated_distinct_values)
-        distribution_str = self._build_distribution_str()
+        distribution_str = ', '.join(self._distributed_by)
 
         if self._row_id_cols:
             other_cols = ', '.join(self._row_id_cols)
         else:
-            all_cols = self._all_cols_types.keys()
+            all_cols = [k for k, v in self._all_cols_types]
             other_cols = ', '.join([c for c in all_cols
                                     if (c not in self._output_cols and
                                         unquote_ident(c) not in self._output_cols)])
 
         if self.array_output:
-            encoded_col_str = "ARRAY[{0}] AS __encoded_variables__".format(categorical_col_str)
+            encoded_col_str = ("ARRAY[{0}] AS {1}".
+                               format(categorical_col_str, self._array_out_name))
         else:
             encoded_col_str = categorical_col_str
         out_sql = """
@@ -138,8 +133,65 @@ class CategoricalEncoder(object):
         plpy.execute(out_sql)
     # -------------------------------------------------------------------------
 
+    def _parse_parameters(self):
+        # columns to encode
+        if not self.categorical_cols or self.categorical_cols.strip() == '*':
+            self._categorical_cols = []
+        else:
+            self._categorical_cols = split_quoted_delimited_str(self.categorical_cols)
+        self._categorical_cols_to_exclude = split_quoted_delimited_str(self.categorical_cols_to_exclude)
+
+        # columns that determine the index for output table
+        self._row_id_cols = split_quoted_delimited_str(self.row_id)
+
+        # flag to build a dictionary table
+        self._output_dictionary = True if self.array_output else self.output_dictionary
+
+        # how to distribute the output table (for distributed platforms)
+        if not is_platform_pg():
+            if self.distributed_by:
+                self._distributed_by = split_quoted_delimited_str(self.distributed_by.strip())
+            else:
+                self._distributed_by = self._row_id_cols if self._row_id_cols else []
+        else:
+            self._distributed_by = []
+
+    def _parse_dictlike_parameters(self):
+        def _parse_dict_str(param, cast=str):
+            if param:
+                # param can be a mapping between col name and a value or ...
+                out_param = extract_keyvalue_params(param)
+                if not out_param:
+                    # ... a global value (without =) that applies to all columns
+                    out_param = dict([(i, cast(param)) for i in self._output_cols])
+                return out_param
+            else:
+                return {}
+        self._value_to_drop = _parse_dict_str(self.value_to_drop, str)
+        self._top = _parse_dict_str(self.top, float)
+    # -------------------------------------------------------------------------
+
+    def _validate_parameters(self):
+        _assert(self.output_table and
+                self.output_table.strip().lower() not in ('null', ''),
+                "Encoding categorial: Invalid output table name!")
+        _assert(not table_exists(self.output_table), "Encoding categorial: Output table already exists!")
+        _assert(self.source_table and self.source_table.strip().lower() not in ('null', ''),
+                "Encoding categorial: Invalid data table name!")
+        _assert(table_exists(self.source_table),
+                "Encoding categorial: Data table ({0}) is missing!". format(self.source_table))
+        _assert(not table_is_empty(self.source_table),
+                "Encoding categorial: Data table ({0}) is empty!". format(self.source_table))
+        _assert(columns_exist_in_table(self.source_table, self._categorical_cols),
+                "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
+                .format(self._categorical_cols, self.source_table))
+        _assert(columns_exist_in_table(self.source_table, self._row_id_cols),
+                "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
+                .format(self._row_id_cols, self.source_table))
+    # ------------------------------------------------------------------------------
+
     def _populate_features(self):
-        self._all_cols_types = dict(get_cols_and_types(self.source_table))
+        self._all_cols_types = get_cols_and_types(self.source_table)
 
         # any column belonging to the following types are considered categorical
         int_types = ['integer', 'smallint']
@@ -147,9 +199,8 @@ class CategoricalEncoder(object):
         boolean_types = ['boolean']
         cat_types = int_types + text_types + boolean_types
 
-        self._cat_features_set = set([c
-                                      for c, t in self._all_cols_types.items()
-                                      if t in cat_types])
+        self._cat_features = [c for (c, t) in self._all_cols_types
+                              if t in cat_types]
     # -------------------------------------------------------------------------
 
     def _is_col_name_long(self, col_to_values):
@@ -165,9 +216,8 @@ class CategoricalEncoder(object):
                     if not isinstance(v, (list, tuple)):
                         values_len.append(len(v))
                     else:
-                        values_len.append(max(len(i for i in v)))
+                        values_len.append(len(self._name_others_col))
             col_len.append(len(col) + max(values_len) + 1)
-        plpy.info("Max column name = " + str(max(col_len)))
         return max(col_len) > MAX_COLUMN_LENGTH
     # -------------------------------------------------------------------------
 
@@ -199,16 +249,19 @@ class CategoricalEncoder(object):
             if isinstance(v, (list, tuple)):
                 # all values collected in a list are to be treated as a single
                 # categorical factor
-                value_str = "IN ({0})".format(','.join("'%s'" % (i) for i in v
-                                                       if i is not None))
-                if None in v:
-                    value_str += " OR {0} IS NULL".format(col)
+                if v:
+                    value_str = "IN ({0})".format(','.join("'%s'" % (i) for i in v
+                                                           if i is not None))
+                    if None in v:
+                        value_str += " OR {0} IS NULL".format(col)
+                else:
+                    return ''
                 v_type = list
             elif v is None:
                 value_str = "IS NULL"
                 v_type = None
             else:
-                # assuming cast to str if v is not list/tuple and not None
+                # assume v is a string if not list/tuple and not None
                 value_str = "= '{v}'".format(v=str(v))
                 v_type = str
 
@@ -216,7 +269,9 @@ class CategoricalEncoder(object):
                 # array_output = True implies all the case outputs will be wrapped
                 # as an array, hence not requiring an alias for each case
                 if not self._output_dictionary:
-                    value_names = {None: 'NULL', list: self._name_others_col, str: v}
+                    value_names = {None: 'NULL',
+                                   list: self._name_others_col,
+                                   str: strip_end_quotes(v)}
                     alias = 'AS "{0}_{1}"'.format(col_no_quotes, value_names[v_type])
                 else:
                     alias = 'AS "{0}_{1}"'.format(col_no_quotes, seq)
@@ -230,9 +285,11 @@ class CategoricalEncoder(object):
                                    self._is_col_name_long(col_to_values))
         col_switch_list = []
         for col in self._output_cols:
-            value_switch_list = [_build_case_stmt(col, v, i)
+            value_switch_list = [_build_case_stmt(col, v, i + 1)
                                  for i, v in enumerate(col_to_values[col])]
-            col_switch_list.append(','.join(value_switch_list))
+            # value_switch_list could have '' strings which need to be filtered
+            # out before adding to the case switch list
+            col_switch_list.append(','.join([i for i in value_switch_list if i]))
         return ',\n'.join(col_switch_list)
     # ----------------------------------------------------------------------
 
@@ -251,22 +308,18 @@ class CategoricalEncoder(object):
                 encoded_col_name = "__encoded_variables__"
             else:
                 encoded_col_name = '"{col}_{seq}"'
-            value_names = {type(None): lambda x: 'NULL', list: str, str: str}
+            value_names = {type(None): lambda x: 'NULL',
+                           list: lambda x: ",".join([value_names[type(i)](i) for i in x]),
+                           str: str}
             insert_template = "('%s', {seq}, '{col}', '{value_str}')" % (encoded_col_name)
             insert_values = [insert_template.
                              format(col=col,
                                     seq=seq + 1,
                                     value_str=value_names[type(v)](v))
-                             for seq, v in values]
-            if self.keep_null and None in col_to_values[col]:
-                insert_template = "('%s', {seq}, '{col}', NULL::text)" % (encoded_col_name)
-                insert_values.append(
-                    insert_template.format(col=col, seq=len() + 1))
-            plpy.execute("""
-                INSERT INTO {tbl} VALUES
-                    {insert_str}
-                """.format(tbl=dict_tbl_name,
-                           insert_str=',\n'.join(insert_values)))
+                             for seq, v in enumerate(values)]
+            plpy.execute("""INSERT INTO {tbl} VALUES {insert_str} """.
+                         format(tbl=dict_tbl_name,
+                                insert_str=',\n'.join(insert_values)))
     # ----------------------------------------------------------------------
 
     def _get_cols_to_encode(self):
@@ -275,57 +328,99 @@ class CategoricalEncoder(object):
         We also exclude from row_id columns
         """
 
-        def _get_col_type(types_dict, col_name):
-            # Return value from dict where key could be quoted or unquoted name
-            return types_dict.get(
-                col_name, types_dict.get(unquote_ident(col_name)))
-
         # include the quoted name and the unquoted name in exclusion set
         # to allow user to provide either form
 
         # common columns to exclude (currently disabled)
-        # other_col_set = set(self._row_id_cols)
-        # other_col_set |= set(unquote_ident(i) for i in self._row_id_cols)
-        if self.categorical_cols.strip() == '*':
-            exclude_set = set(split_quoted_delimited_str(self.categorical_cols_to_exclude))
-            feature_set = self._cat_features_set - exclude_set
-            return list(feature_set)  # order not defined if '*' is an input
+        other_col_set = set(self._row_id_cols)
+        other_col_set |= set(plpy.quote_ident(i) for i in self._row_id_cols)
+
+        exclude_set = set(self._categorical_cols_to_exclude)
+        exclude_set |= set(plpy.quote_ident(i) for i in self._row_id_cols)
+
+        if not self._categorical_cols:
+            feature_set = set(self._cat_features) - exclude_set - other_col_set
+            return [f for f in self._cat_features
+                    if f not in exclude_set and f not in other_col_set]
         else:
             # add unquoted names into the cat features since the feature list
             # provided by user could contain unquoted names
-            self._cat_features_set |= set(unquote_ident(i) for i in self._cat_features_set)
-            feature_list = split_quoted_delimited_str(self.categorical_cols)
-            feature_set = set(feature_list) & self._cat_features_set
-            exclude_set = set(split_quoted_delimited_str(self.categorical_cols_to_exclude))
-            return_set = feature_set - exclude_set
-
-            # instead of returning list(return_set) create list with
+            expanded_cat_features = (self._cat_features_set |
+                                     set(unquote_ident(i) for i in self._cat_features_set))
+            feature_set = set(self._categorical_cols) & expanded_cat_features
+            # instead of returning list(feature_set) create list with
             # elements in same order as original feature_list
-            return [feat for feat in feature_list if feat in return_set]
+            return [feat for feat in self._categorical_cols if feat in feature_set]
     # -------------------------------------------------------------------------
 
-    # def _get_top_values(self):
-    #
-    #     """SELECT array_agg(f order by c desc), array_agg(c order by c desc)
-    #        FROM (
-    #           SELECT poutcome as f, count(*) as c
-    #           FROM bank group by poutcome
-    #        ) q"""
+    def _get_top_values(self):
+        """ Get the top values for each column.
 
-    def _get_top_distinct_values(self):
+        Note: this function computes the frequencies for values of each column
+        even if that column is not part of the 'top' argument. An improvement
+        here is to compute top values only for requested columns and use
+        distinct values for others.
+        """
+        top_val_sql_list = []
+        for col in self._output_cols:
+            if not self.keep_null:
+                filter_null = 'WHERE {col} IS NOT NULL'.format(col=col)
+            else:
+                filter_null = ''
+            top_val_sql_list.append("""
+                SELECT
+                    '{col}' as col_name,
+                    array_agg(f order by c desc) as value,
+                    array_agg(c order by c desc) as freq
+                FROM (
+                    SELECT {col}::text as f, count(*)::integer as c
+                    FROM {tbl}
+                    {filter_null}
+                    GROUP BY {col}
+               ) q
+            """.format(col=col, tbl=self.source_table, filter_null=filter_null))
+        top_values = plpy.execute('\n UNION ALL \n'.join(top_val_sql_list))
+        # top_values is now a list of dictionary, each element
+        # giving the frequency of the values in a column
+        top_distinct_values = {}
+        for each_col_data in top_values:
+            col = each_col_data['col_name']
+            ordered_values, ordered_freq = each_col_data['value'], each_col_data['freq']
+            if col in self._top:
+                top_arg = self._top[col]
+                if top_arg >= 1:
+                    # top >= 1 is considered a count of top values to pick ...
+                    n_values = int(top_arg)
+                else:
+                    threshold = int(math.ceil(top_arg * sum(ordered_freq)))
+                    covered_frac = 0
+                    for i, freq in enumerate(ordered_freq):
+                        # go through ordered frequencies to find the point
+                        # at which sum(freq) goes over the threshold
+                        if covered_frac > threshold:
+                            n_values = i
+                            break
+                        else:
+                            covered_frac += freq
+                top_distinct_values[col] = ordered_values[:n_values] + [list(ordered_values[n_values:])]
+            else:
+                top_distinct_values[col] = ordered_values
+        return top_distinct_values
+
+    def _get_distinct_values(self):
         """ Find distinct values of each categorical column
         """
         array_agg_str = ',\n'.join("array_agg(DISTINCT {c}) AS {c}".
                                    format(c=c) for c in self._output_cols)
         if self.keep_null:
-            # Some platforms don't include NULL values as part of the array_agg(DISTINCT ...)
-            # Below checks explicitly for NULL values
+            # Some platforms don't include NULL values as part of the
+            # array_agg(DISTINCT ...). Below checks explicitly for NULL values
             null_str = ', ' + ',\n'.join(
                 'bool_or(CASE WHEN {c} IS NULL THEN True ELSE False END)'
                 ' AS "{c_}_isnull"'.format(c=c, c_=strip_end_quotes(c.strip()))
                 for c in self._output_cols)
         else:
-            null_str = ""
+            null_str = ''
         col_values_data = plpy.execute("SELECT {0} {1} FROM {2}".
                                        format(array_agg_str,
                                               null_str,
@@ -334,14 +429,11 @@ class CategoricalEncoder(object):
         # Collect the distinct values (possibly including null) for every column
         distinct_values = {}
         for col in self._output_cols:
-            col_values = self._get_quoted_unquoted(col_values_data, col)
-            distinct_values[col] = sorted(col_values)
+            distinct_values[col] = self._get_quoted_unquoted(col_values_data, col)
             if not self.keep_null:
-                try:
+                if None in distinct_values[col]:
                     # ignore NULL if keep_null = False
                     distinct_values[col].remove(None)
-                except ValueError:
-                    continue
             else:
                 null_col_name = '"{c}_isnull"'.format(c=strip_end_quotes(col.strip()))
                 col_contains_null = self._get_quoted_unquoted(col_values_data, null_col_name)
@@ -424,60 +516,8 @@ def encode_categorical_variables(
                                  array_output, output_dictionary,
                                  distributed_by)
     encoder.build_output_table()
-
-    # args is updated with processed values of parameters
-    # for params that have updates, a new key is added with '_' in front of the
-    # original variable name. See function for list of new variables
-
-    # 1. Parse and validate all arguments per the options detailed in user doc
-    # _parse_all_parameters(args)
-    # _validate_parameters(args)
-
-    # cols = args['_categorical_cols']
-    # cols = split_quoted_delimited_str(categorical_cols)
-    # args['_row_id'] = []
-    # cols = _get_cols_to_encode(schema_madlib, source_table, categorical_cols,
-    #                            categorical_cols_to_exclude, args['_row_id'])
-
-    # categorical_col_str = _build_encoding_str(source_table, cols, keep_null)
-    # distribution_str = _build_distribution_str(distributed_by)
-
-    # plpy.execute("""
-    #     CREATE TABLE {out} AS
-    #         (
-    #         SELECT
-    #             *,
-    #             {cols}
-    #         FROM
-    #             {src}
-    #         )
-    #     {dist}
-    #     """.format(out=output_table,
-    #                cols=categorical_col_str,
-    #                src=source_table,
-    #                dist=distribution_str))
-
     return None
 # ---------------------------------------------------------------
-
-
-def _validate_args(self):
-    """ Validate all input parameters """
-    _assert(self.output_table and
-            self.output_table.strip().lower() not in ('null', ''),
-            "Invalid output table name!")
-    _assert(not table_exists(self.output_table),
-            "Output table already exists!")
-    _assert(self.source_table and self.source_table.strip().lower() not in ('null', ''),
-            "Invalid data table name!")
-    _assert(table_exists(self.source_table),
-            "Data table ({0}) is missing!". format(self.source_table))
-    _assert(not table_is_empty(self.source_table),
-            "Data table ({0}) is empty!". format(self.source_table))
-    _assert(columns_exist_in_table(self.source_table, self.categorical_cols),
-            "Not all columns from {0} present in source table ({1})"
-            .format(self.categorical_cols, self.source_table))
-# ------------------------------------------------------------------------------
 
 
 def indicator_variables_help(schema_madlib, message, **kwargs):
