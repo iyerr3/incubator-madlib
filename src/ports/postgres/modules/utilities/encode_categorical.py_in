@@ -25,6 +25,8 @@
 """
 
 import plpy
+from control import MinWarning
+
 from utilities import _assert
 from utilities import strip_end_quotes
 from utilities import split_quoted_delimited_str
@@ -85,11 +87,13 @@ class CategoricalEncoder(object):
         self._parse_parameters()
         self._validate_parameters()
 
-        self._populate_features()
         self._output_cols = self._get_cols_to_encode()
         if not self._output_cols:
-            plpy.error("No categorical columns available to encode (or all have been excluded)")
+            plpy.error("Encoding categorical: No categorical columns available "
+                       "to encode (or all have been excluded)")
 
+        # _parse_dictlike_parameters uses _output_cols and has to be below
+        # _get_cols_to_encode
         self._parse_dictlike_parameters()
     # ----------------------------------------------------------------------
 
@@ -98,11 +102,13 @@ class CategoricalEncoder(object):
             distinct_values = self._get_top_values()
         else:
             distinct_values = self._get_distinct_values()
-        updated_distinct_values = self._drop_values(distinct_values)
-        categorical_col_str = self._build_encoding_str(updated_distinct_values)
+        categorical_col_str = self._build_encoding_str(distinct_values)
         if self._output_dictionary:
-            self._build_output_dictionary(updated_distinct_values)
-        distribution_str = ', '.join(self._distributed_by)
+            self._build_output_dictionary(distinct_values)
+        if self._distributed_by:
+            distribution_str = 'DISTRIBUTED BY ' + ', '.join(self._distributed_by)
+        else:
+            distribution_str = ''
 
         if self._row_id_cols:
             other_cols = ', '.join(self._row_id_cols)
@@ -113,10 +119,9 @@ class CategoricalEncoder(object):
                                         unquote_ident(c) not in self._output_cols)])
 
         if self.array_output:
-            encoded_col_str = ("ARRAY[{0}] AS {1}".
-                               format(categorical_col_str, self._array_out_name))
-        else:
-            encoded_col_str = categorical_col_str
+            categorical_col_str = ("ARRAY[{0}] AS {1}".
+                                   format(categorical_col_str,
+                                          self._array_out_name))
         out_sql = """
             CREATE TABLE {out} AS (
                 SELECT
@@ -128,7 +133,7 @@ class CategoricalEncoder(object):
             {dist}
             """.format(out=self.output_table,
                        other_cols=other_cols,
-                       cols=encoded_col_str,
+                       cols=categorical_col_str,
                        src=self.source_table,
                        dist=distribution_str)
         plpy.execute(out_sql)
@@ -168,8 +173,8 @@ class CategoricalEncoder(object):
                 return out_param
             else:
                 return {}
-        self._value_to_drop = _parse_dict_str(self.value_to_drop, str)
-        self._top = _parse_dict_str(self.top, float)
+        self._value_to_drop = _parse_dict_str(self.value_to_drop, cast=str)
+        self._top = _parse_dict_str(self.top, cast=float)
     # -------------------------------------------------------------------------
 
     def _validate_parameters(self):
@@ -193,7 +198,7 @@ class CategoricalEncoder(object):
                 .format(self._row_id_cols, self.source_table))
     # ------------------------------------------------------------------------------
 
-    def _populate_features(self):
+    def _find_cat_features(self):
         self._all_cols_types = get_cols_and_types(self.source_table)
 
         # any column belonging to the following types are considered categorical
@@ -253,10 +258,13 @@ class CategoricalEncoder(object):
                 # all values collected in a list are to be treated as a single
                 # categorical factor
                 if v:
-                    value_str = "IN ({0})".format(','.join("'%s'" % (i) for i in v
-                                                           if i is not None))
-                    if None in v:
-                        value_str += " OR {0} IS NULL".format(col)
+                    non_null_v_str = ','.join(["'%s'" % (i) for i in v if i is not None])
+                    if non_null_v_str:
+                        value_str = "IN ({0})".format(non_null_v_str)
+                        if None in v:
+                            value_str += "OR {0} IS NULL".format(col)
+                    else:
+                        value_str = "IS NULL"
                 else:
                     return ''
                 v_type = list
@@ -290,10 +298,11 @@ class CategoricalEncoder(object):
         for col in self._output_cols:
             value_switch_list = [_build_case_stmt(col, v, i + 1)
                                  for i, v in enumerate(col_to_values[col])]
-            # value_switch_list could have '' strings which need to be filtered
-            # out before adding to the case switch list
+            # value_switch_list could have '' strings or empty lists which
+            # need to be filtered out before adding to the case switch list
             col_switch_list.append(','.join([i for i in value_switch_list if i]))
         return ',\n'.join(col_switch_list)
+
     # ----------------------------------------------------------------------
 
     def _build_output_dictionary(self, col_to_values):
@@ -338,11 +347,10 @@ class CategoricalEncoder(object):
 
         We also exclude from row_id columns
         """
+        self._find_cat_features()
 
         # include the quoted name and the unquoted name in exclusion set
         # to allow user to provide either form
-
-        # common columns to exclude (currently disabled)
         other_col_set = set(self._row_id_cols)
         other_col_set |= set(quote_ident(i) for i in self._row_id_cols)
 
@@ -356,8 +364,8 @@ class CategoricalEncoder(object):
         else:
             # add unquoted names into the cat features since the feature list
             # provided by user could contain unquoted names
-            expanded_cat_features = (self._cat_features_set |
-                                     set(unquote_ident(i) for i in self._cat_features_set))
+            expanded_cat_features = (set(self._cat_features) |
+                                     set(unquote_ident(i) for i in self._cat_features))
             feature_set = set(self._categorical_cols) & expanded_cat_features
             # instead of returning list(feature_set) create list with
             # elements in same order as original feature_list
@@ -373,11 +381,23 @@ class CategoricalEncoder(object):
         distinct values for others.
         """
         top_val_sql_list = []
+        col_to_type = dict(self._all_cols_types)
         for col in self._output_cols:
+            filter_clauses = []
             if not self.keep_null:
-                filter_null = 'WHERE {col} IS NOT NULL'.format(col=col)
+                filter_clauses.append('{col} IS NOT NULL'.format(col=col))
+            if col in self._value_to_drop:
+                # add clause to remove value from col selection.
+                # add the "IS NULL" condition to ensure removing the value does
+                # not filter out the NULL values as well
+                filter_clauses.append("({col} <> '{val}'::{cast} or {col} IS NULL)".
+                                      format(col=col,
+                                             val=self._value_to_drop[col],
+                                             cast=col_to_type[col]))
+            if filter_clauses:
+                filter_str = "WHERE " + 'AND \n'.join(filter_clauses)
             else:
-                filter_null = ''
+                filter_str = ''
             top_val_sql_list.append("""
                 SELECT
                     '{col}' as col_name,
@@ -386,43 +406,53 @@ class CategoricalEncoder(object):
                 FROM (
                     SELECT {col}::text as f, count(*)::integer as c
                     FROM {tbl}
-                    {filter_null}
+                    {filter_str}
                     GROUP BY {col}
                ) q
-            """.format(col=col, tbl=self.source_table, filter_null=filter_null))
+            """.format(col=col, tbl=self.source_table, filter_str=filter_str))
         top_values = plpy.execute('\n UNION ALL \n'.join(top_val_sql_list))
+
         # top_values is now a list of dictionary, each element
         # giving the frequency of the values in a column
         top_distinct_values = {}
         for each_col_data in top_values:
-            col = each_col_data['col_name']
-            ordered_values, ordered_freq = each_col_data['value'], each_col_data['freq']
+            # for each column find at which point does the top 'k' values occur
+            # where 'k' can be described as a percentage of the total count
+            col, ordered_values, ordered_freq = [each_col_data[i]
+                                                 for i in ('col_name', 'value', 'freq')]
             if col in self._top:
                 top_arg = self._top[col]
                 if top_arg >= 1:
                     # top >= 1 is considered a count of top values to pick ...
                     n_values = int(top_arg)
                 else:
+                    # top < 1 is considered a percent of total count of the values
                     threshold = int(math.ceil(top_arg * sum(ordered_freq)))
                     covered_frac = 0
                     for i, freq in enumerate(ordered_freq):
-                        # go through ordered frequencies to find the point
-                        # at which sum(freq) goes over the threshold
+                        # iterate ordered frequencies to find the point
+                        # at which cumsum(freq) goes over the threshold
                         if covered_frac > threshold:
                             n_values = i
                             break
                         else:
                             covered_frac += freq
-                top_distinct_values[col] = ordered_values[:n_values] + [list(ordered_values[n_values:])]
+                if n_values < len(ordered_values):
+                    top_distinct_values[col] = ordered_values[:n_values] + [list(ordered_values[n_values:])]
+                else:
+                    # this else clause avoids the empty list at the end
+                    top_distinct_values[col] = ordered_values
             else:
+                # need all values for this column since no top value provided
                 top_distinct_values[col] = ordered_values
         return top_distinct_values
 
     def _get_distinct_values(self):
         """ Find distinct values of each categorical column
         """
-        array_agg_str = ',\n'.join("array_agg(DISTINCT {c}) AS {c}".
+        array_agg_str = ',\n'.join("array_agg(DISTINCT {c}::text) AS {c}".
                                    format(c=c) for c in self._output_cols)
+
         if self.keep_null:
             # Some platforms don't include NULL values as part of the
             # array_agg(DISTINCT ...). Below checks explicitly for NULL values
@@ -441,6 +471,8 @@ class CategoricalEncoder(object):
         distinct_values = {}
         for col in self._output_cols:
             distinct_values[col] = self._get_quoted_unquoted(col_values_data, col)
+            if col in self._value_to_drop:
+                distinct_values[col].remove(self._value_to_drop[col])
             if not self.keep_null:
                 if None in distinct_values[col]:
                     # ignore NULL if keep_null = False
@@ -452,41 +484,6 @@ class CategoricalEncoder(object):
                     distinct_values[col].append(None)
 
         return distinct_values
-    # ----------------------------------------------------------------------
-
-    def _drop_values(self, col_to_values):
-        new_col_to_values = {}
-        for c, v in col_to_values.items():
-            drop_val = self._get_quoted_unquoted(self._value_to_drop, c)
-            if drop_val:
-                new_v = [x for x in v
-                         if x != drop_val and strip_end_quotes(x) != drop_val]
-            else:
-                new_v = v
-            new_col_to_values[c] = new_v
-        return new_col_to_values
-    # ----------------------------------------------------------------------
-
-    def _build_distribution_str(self):
-        """
-        Args:
-            @param dist_by
-
-        Returns:
-
-        """
-        # if not is_platform_pg:
-        #     if distributed_by:
-        #         dist_str = distributed_by
-        #     else:
-        #         dist_str = ','.join(['"%s"' % i for i in get_distribution_policy(source_table)
-        #                              if i is not None])
-        #     if dist_str:
-        #         sql_list.append("distributed by (" + dist_str + ")")
-        #     else:
-        #         sql_list.append("distributed randomly")
-        # distribution_str = _get_distribution_str()
-        return ''
     # ----------------------------------------------------------------------
 
 
@@ -520,13 +517,13 @@ def encode_categorical_variables(
 
     """
     # _validate_args()
-
-    encoder = CategoricalEncoder(schema_madlib, source_table, output_table,
-                                 categorical_cols, categorical_cols_to_exclude,
-                                 row_id, top, value_to_drop, keep_null,
-                                 array_output, output_dictionary,
-                                 distributed_by)
-    encoder.build_output_table()
+    with MinWarning('error'):
+        encoder = CategoricalEncoder(schema_madlib, source_table, output_table,
+                                     categorical_cols, categorical_cols_to_exclude,
+                                     row_id, top, value_to_drop, keep_null,
+                                     array_output, output_dictionary,
+                                     distributed_by)
+        encoder.build_output_table()
     return None
 # ---------------------------------------------------------------
 
