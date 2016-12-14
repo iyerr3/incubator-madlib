@@ -107,7 +107,7 @@ class CategoricalEncoder(object):
         if self._output_dictionary:
             self._build_output_dictionary(distinct_values)
         if self._distributed_by:
-            distribution_str = 'DISTRIBUTED BY ' + ', '.join(self._distributed_by)
+            distribution_str = 'DISTRIBUTED BY ({0})'.format(', '.join(self._distributed_by))
         else:
             distribution_str = ''
 
