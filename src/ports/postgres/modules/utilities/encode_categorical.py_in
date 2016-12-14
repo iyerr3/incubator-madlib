@@ -23,6 +23,7 @@
 @file encode_categorical.py_in
 
 """
+from itertools import count
 
 import plpy
 from control import MinWarning
@@ -163,18 +164,18 @@ class CategoricalEncoder(object):
             self._distributed_by = []
 
     def _parse_dictlike_parameters(self):
-        def _parse_dict_str(param, cast=str):
+        def _parse_dict_str(param, cast=str, allowed_global=False):
             if param:
                 # param can be a mapping between col name and a value or ...
                 out_param = extract_keyvalue_params(param)
-                if not out_param:
+                if not out_param and allowed_global:
                     # ... a global value (without =) that applies to all columns
                     out_param = dict([(i, cast(param)) for i in self._output_cols])
                 return out_param
             else:
                 return {}
         self._value_to_drop = _parse_dict_str(self.value_to_drop, cast=str)
-        self._top = _parse_dict_str(self.top, cast=float)
+        self._top = _parse_dict_str(self.top, cast=float, allowed_global=True)
     # -------------------------------------------------------------------------
 
     def _validate_parameters(self):
@@ -326,17 +327,23 @@ class CategoricalEncoder(object):
                 value               TEXT
             )
         """.format(tbl=dict_tbl_name))
+        global_seq = count(1)
         for col, values in col_to_values.items():
+            local_seq = count(1)
+            col_no_quotes = strip_end_quotes(col)
             if self.array_output:
                 encoded_col_name = "__encoded_variables__"
+                seq = global_seq
             else:
-                encoded_col_name = '"{col}_{seq}"'
+                encoded_col_name = '"{col_no_quotes}_{seq}"'
+                seq = local_seq
             insert_template = "('%s', {seq}, '{col}', '{value_str}'::TEXT)" % (encoded_col_name)
             insert_values = [insert_template.
                              format(col=col,
-                                    seq=seq + 1,
+                                    col_no_quotes=col_no_quotes,
+                                    seq=next(seq),
                                     value_str=_get_value_name(v))
-                             for seq, v in enumerate(values)]
+                             for v in values]
             plpy.execute("""INSERT INTO {tbl} VALUES {insert_str} """.
                          format(tbl=dict_tbl_name,
                                 insert_str=',\n'.join(insert_values)))
