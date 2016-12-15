@@ -86,6 +86,7 @@ class CategoricalEncoder(object):
         self._validate_parameters()
 
         self._output_cols, self._col_to_type = self._get_cols_to_encode()
+        plpy.info(self._output_cols)
         if not self._output_cols:
             plpy.error("Encoding categorical: No categorical columns available "
                        "to encode (or all have been excluded)")
@@ -166,13 +167,14 @@ class CategoricalEncoder(object):
             if param:
                 # param can be a mapping between col name and a value or ...
                 out_param = extract_keyvalue_params(param)
-                if not out_param and allowed_global:
+                if not out_param and (allowed_global or len(self._output_cols) == 1):
                     # ... a global value (without =) that applies to all columns
                     out_param = dict([(i, cast(param)) for i in self._output_cols])
                 return out_param
             else:
                 return {}
-        self._value_to_drop = _parse_dict_str(self.value_to_drop, cast=str)
+        self._value_to_drop = _parse_dict_str(self.value_to_drop, cast=str,
+                                              allowed_global=False)
         self._top = _parse_dict_str(self.top, cast=float)
     # -------------------------------------------------------------------------
 
@@ -180,12 +182,14 @@ class CategoricalEncoder(object):
         input_tbl_valid(self.source_table, "Encoding categorical")
         output_tbl_valid(self.output_table, "Encoding categorical")
         output_tbl_valid(add_postfix(self.output_table, "_dictionary"), "Encoding categorical")
-        _assert(is_var_valid(self.source_table, ','.join(self._categorical_cols)),
-                "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
-                .format(self._categorical_cols, self.source_table))
-        _assert(is_var_valid(self.source_table, ','.join(self._row_id_cols)),
-                "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
-                .format(self._row_id_cols, self.source_table))
+        if self._categorical_cols:
+            _assert(is_var_valid(self.source_table, ','.join(self._categorical_cols)),
+                    "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
+                    .format(self._categorical_cols, self.source_table))
+        if self._row_id_cols:
+            _assert(is_var_valid(self.source_table, ','.join(self._row_id_cols)),
+                    "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
+                    .format(self._row_id_cols, self.source_table))
     # ------------------------------------------------------------------------------
 
     def _is_col_name_long(self, col_to_values):

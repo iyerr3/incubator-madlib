@@ -55,6 +55,8 @@ F|0.550|0.415|0.135|2
 @|0.475|0.37|0.125|2
 \.
 
+SELECT * FROM abalone;
+
 -- default test
 select madlib.encode_categorical_variables('abalone', 'abalone_out1', 'sex');
 select * from abalone_out1;
