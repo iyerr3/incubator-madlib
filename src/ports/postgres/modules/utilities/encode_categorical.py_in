@@ -202,7 +202,7 @@ class CategoricalEncoder(object):
             for v in values:
                 if v:
                     if not isinstance(v, (list, tuple)):
-                        values_len.append(len(v))
+                        values_len.append(len(str(v)))
                     else:
                         values_len.append(len(self._name_others_col))
             col_len.append(len(col) + max(values_len) + 1)
