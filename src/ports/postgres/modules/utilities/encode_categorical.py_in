@@ -77,7 +77,7 @@ class CategoricalEncoder(object):
         self.output_dictionary = output_dictionary
         self.distributed_by = distributed_by
 
-        self._name_others_col = "__MISC__"
+        self._name_others_col = "_MISC__"
         self._array_out_name = "__encoded_variables__"
 
         # create new parameters after validating and parsing inputs
@@ -86,7 +86,6 @@ class CategoricalEncoder(object):
         self._validate_parameters()
 
         self._output_cols, self._col_to_type = self._get_cols_to_encode()
-        plpy.info(self._output_cols)
         if not self._output_cols:
             plpy.error("Encoding categorical: No categorical columns available "
                        "to encode (or all have been excluded)")

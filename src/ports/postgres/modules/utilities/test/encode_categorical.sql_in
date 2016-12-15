@@ -76,7 +76,7 @@ select * from abalone_out3;
 
 -- * working, exclude working without quoted names
 select madlib.encode_categorical_variables('abalone', 'abalone_out4',
-                                           '*', 'Class',
+                                           '*', '"Class"',
                                            'id', '2', 'sex=M, Class=1',
                                            true, false, false
                                            );
