@@ -37,50 +37,53 @@ def create_indicator_variables(schema_madlib, source_table, out_table,
         @param categorical_cols   A string, comma separated column names for
                             for categorical variables
     """
-    cols = split_quoted_delimited_str(categorical_cols)
-    validate_dummy_coding(source_table, out_table, cols)
+    with MinWarning('warning'):
+        plpy.warning("This function has been deprecated. "
+                     "Please use `encode_categorical_variables` for encoding categoricals.")
+        cols = split_quoted_delimited_str(categorical_cols)
+        validate_dummy_coding(source_table, out_table, cols)
 
-    sql_list = ["CREATE TABLE " + out_table + " AS (SELECT *"]
-    for col in cols:
-        col_no_quotes = strip_end_quotes(col.strip())
-        distinct_values = plpy.execute(
-            "SELECT {col} AS value FROM {source_table} "
-            "GROUP BY {col} ORDER BY {col}".
-            format(col=col, source_table=source_table))
-        distinct_values = [strip_end_quotes(item['value']) for item in distinct_values]
-        null_wrap_case_str = ""
-        null_wrap_end_str = ""
-        if not keep_null and None in distinct_values:
-            null_wrap_case_str = "CASE WHEN \"{col}\" is NULL THEN NULL ELSE "
-            null_wrap_end_str = "END"
-        case_str = ("({wrap_case} "
-                    "CASE WHEN \"{{col}}\" = '{{value}}' THEN 1 ELSE 0 END "
-                    "{wrap_end})".
-                    format(wrap_case=null_wrap_case_str,
-                           wrap_end=null_wrap_end_str))
-        sql_list.append(
-            ", " +
-            ', '.join("{case_str} as \"{{col}}_{{value}}\"".
-                      format(case_str=case_str).
-                      format(col=col_no_quotes, value=str(value))
-                      for value in distinct_values if value is not None))
-        if keep_null and None in distinct_values:
-            sql_list.append(", (CASE WHEN \"{0}\" IS NULL THEN 1 ELSE 0 END) "
-                            "as \"{0}_NULL\"".format(col_no_quotes))
-    sql_list.append(" FROM " + source_table + ") ")
-    m4_ifdef(<!__POSTGRESQL__!>, <!!>, <!
-    if distributed_by:
-        dist_str = distributed_by
-    else:
-        dist_str = ','.join(['"%s"'%i for i in get_distribution_policy(schema_madlib, source_table)
-                             if i is not None])
-    if dist_str:
-        sql_list.append("distributed by (" + dist_str + ")")
-    else:
-        sql_list.append("distributed randomly")
-    !>)
-    plpy.execute(''.join(sql_list))
-    return None
+        sql_list = ["CREATE TABLE " + out_table + " AS (SELECT *"]
+        for col in cols:
+            col_no_quotes = strip_end_quotes(col.strip())
+            distinct_values = plpy.execute(
+                "SELECT {col} AS value FROM {source_table} "
+                "GROUP BY {col} ORDER BY {col}".
+                format(col=col, source_table=source_table))
+            distinct_values = [strip_end_quotes(item['value']) for item in distinct_values]
+            null_wrap_case_str = ""
+            null_wrap_end_str = ""
+            if not keep_null and None in distinct_values:
+                null_wrap_case_str = "CASE WHEN \"{col}\" is NULL THEN NULL ELSE "
+                null_wrap_end_str = "END"
+            case_str = ("({wrap_case} "
+                        "CASE WHEN \"{{col}}\" = '{{value}}' THEN 1 ELSE 0 END "
+                        "{wrap_end})".
+                        format(wrap_case=null_wrap_case_str,
+                               wrap_end=null_wrap_end_str))
+            sql_list.append(
+                ", " +
+                ', '.join("{case_str} as \"{{col}}_{{value}}\"".
+                          format(case_str=case_str).
+                          format(col=col_no_quotes, value=str(value))
+                          for value in distinct_values if value is not None))
+            if keep_null and None in distinct_values:
+                sql_list.append(", (CASE WHEN \"{0}\" IS NULL THEN 1 ELSE 0 END) "
+                                "as \"{0}_NULL\"".format(col_no_quotes))
+        sql_list.append(" FROM " + source_table + ") ")
+        m4_ifdef(<!__POSTGRESQL__!>, <!!>, <!
+        if distributed_by:
+            dist_str = distributed_by
+        else:
+            dist_str = ','.join(['"%s"'%i for i in get_distribution_policy(schema_madlib, source_table)
+                                 if i is not None])
+        if dist_str:
+            sql_list.append("distributed by (" + dist_str + ")")
+        else:
+            sql_list.append("distributed randomly")
+        !>)
+        plpy.execute(''.join(sql_list))
+        return None
 # ---------------------------------------------------------------
 
 

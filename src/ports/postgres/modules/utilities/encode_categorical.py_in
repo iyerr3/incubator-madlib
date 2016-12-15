@@ -35,12 +35,9 @@ from utilities import extract_keyvalue_params
 from utilities import add_postfix
 from utilities import is_platform_pg
 
-from validate_args import table_exists
-from validate_args import columns_exist_in_table
-from validate_args import table_is_empty
-from validate_args import unquote_ident
-from validate_args import quote_ident
-from validate_args import get_cols_and_types
+from validate_args import input_tbl_valid, output_tbl_valid, is_var_valid
+from validate_args import unquote_ident, quote_ident
+from validate_args import get_expr_type, get_cols_and_types
 
 import math
 
@@ -88,7 +85,7 @@ class CategoricalEncoder(object):
         self._parse_parameters()
         self._validate_parameters()
 
-        self._output_cols = self._get_cols_to_encode()
+        self._output_cols, self._col_to_type = self._get_cols_to_encode()
         if not self._output_cols:
             plpy.error("Encoding categorical: No categorical columns available "
                        "to encode (or all have been excluded)")
@@ -162,9 +159,10 @@ class CategoricalEncoder(object):
                 self._distributed_by = self._row_id_cols if self._row_id_cols else []
         else:
             self._distributed_by = []
+    # -------------------------------------------------------------------------
 
     def _parse_dictlike_parameters(self):
-        def _parse_dict_str(param, cast=str, allowed_global=False):
+        def _parse_dict_str(param, cast=str, allowed_global=True):
             if param:
                 # param can be a mapping between col name and a value or ...
                 out_param = extract_keyvalue_params(param)
@@ -175,42 +173,20 @@ class CategoricalEncoder(object):
             else:
                 return {}
         self._value_to_drop = _parse_dict_str(self.value_to_drop, cast=str)
-        self._top = _parse_dict_str(self.top, cast=float, allowed_global=True)
+        self._top = _parse_dict_str(self.top, cast=float)
     # -------------------------------------------------------------------------
 
     def _validate_parameters(self):
-        _assert(self.output_table and
-                self.output_table.strip().lower() not in ('null', ''),
-                "Encoding categorial: Invalid output table name")
-        _assert(not table_exists(self.output_table), "Encoding categorial: Output table already exists")
-        _assert(not table_exists(add_postfix(self.output_table, "_dictionary")),
-                "Encoding categorial: Output dictionary table already exists")
-        _assert(self.source_table and self.source_table.strip().lower() not in ('null', ''),
-                "Encoding categorial: Invalid data table name")
-        _assert(table_exists(self.source_table),
-                "Encoding categorial: Data table ({0}) is missing". format(self.source_table))
-        _assert(not table_is_empty(self.source_table),
-                "Encoding categorial: Data table ({0}) is empty". format(self.source_table))
-        _assert(columns_exist_in_table(self.source_table, self._categorical_cols),
+        input_tbl_valid(self.source_table, "Encoding categorical")
+        output_tbl_valid(self.output_table, "Encoding categorical")
+        output_tbl_valid(add_postfix(self.output_table, "_dictionary"), "Encoding categorical")
+        _assert(is_var_valid(self.source_table, ','.join(self._categorical_cols)),
                 "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
                 .format(self._categorical_cols, self.source_table))
-        _assert(columns_exist_in_table(self.source_table, self._row_id_cols),
+        _assert(is_var_valid(self.source_table, ','.join(self._row_id_cols)),
                 "Encoding categorical: Not all columns from ({0}) present in source table ({1})"
                 .format(self._row_id_cols, self.source_table))
     # ------------------------------------------------------------------------------
-
-    def _find_cat_features(self):
-        self._all_cols_types = get_cols_and_types(self.source_table)
-
-        # any column belonging to the following types are considered categorical
-        int_types = ['integer', 'smallint']
-        text_types = ['text', 'varchar', 'character varying', 'char', 'character']
-        boolean_types = ['boolean']
-        cat_types = int_types + text_types + boolean_types
-
-        self._cat_features = [c for (c, t) in self._all_cols_types
-                              if t in cat_types]
-    # -------------------------------------------------------------------------
 
     def _is_col_name_long(self, col_to_values):
         col_len = []
@@ -238,7 +214,12 @@ class CategoricalEncoder(object):
            It is assumed that 'col' is originally quoted - the end quotes
            are stripped to obtain the unquoted form.
         """
-        return col_dict.get(col, col_dict.get(strip_end_quotes(col), None))
+        return col_dict.get(col,
+                            col_dict.get(
+                                quote_ident(col),
+                                col_dict.get(
+                                    unquote_ident(col),
+                                    None)))
     # -------------------------------------------------------------------------
 
     def _build_encoding_str(self, col_to_values):
@@ -349,6 +330,19 @@ class CategoricalEncoder(object):
                                 insert_str=',\n'.join(insert_values)))
     # ----------------------------------------------------------------------
 
+    def _find_cat_features(self):
+        self._all_cols_types = get_cols_and_types(self.source_table)
+
+        # any column belonging to the following types are considered categorical
+        int_types = ['integer', 'smallint']
+        text_types = ['text', 'varchar', 'character varying', 'char', 'character']
+        boolean_types = ['boolean']
+        self._cat_types = set(int_types + text_types + boolean_types)
+
+        self._cat_features = [c for (c, t) in self._all_cols_types
+                              if t in self._cat_types]
+    # -------------------------------------------------------------------------
+
     def _get_cols_to_encode(self):
         """ Expand '*' syntax and exclude some categorical columns
 
@@ -365,18 +359,19 @@ class CategoricalEncoder(object):
         exclude_set |= set(quote_ident(i) for i in self._row_id_cols)
 
         if not self._categorical_cols:
-            feature_set = set(self._cat_features) - exclude_set - other_col_set
-            return [f for f in self._cat_features
-                    if f not in exclude_set and f not in other_col_set]
+            features = [f for f in self._cat_features
+                        if f not in exclude_set and f not in other_col_set]
         else:
-            # add unquoted names into the cat features since the feature list
-            # provided by user could contain unquoted names
-            expanded_cat_features = (set(self._cat_features) |
-                                     set(unquote_ident(i) for i in self._cat_features))
-            feature_set = set(self._categorical_cols) & expanded_cat_features
-            # instead of returning list(feature_set) create list with
-            # elements in same order as original feature_list
-            return [feat for feat in self._categorical_cols if feat in feature_set]
+            features = []
+            for col in self._categorical_cols:
+                col_type = get_expr_type(col, self.source_table).lower()
+                if col_type in self._cat_types:
+                    features.append(col)
+
+        col_to_type = {}
+        for col in features:
+            col_to_type[col] = get_expr_type(col, self.source_table)
+        return features, col_to_type
     # -------------------------------------------------------------------------
 
     def _get_top_values(self):
@@ -388,7 +383,6 @@ class CategoricalEncoder(object):
         distinct values for others.
         """
         top_val_sql_list = []
-        col_to_type = dict(self._all_cols_types)
         for col in self._output_cols:
             filter_clauses = []
             if not self.keep_null:
@@ -400,9 +394,9 @@ class CategoricalEncoder(object):
                 filter_clauses.append("({col} <> '{val}'::{cast} or {col} IS NULL)".
                                       format(col=col,
                                              val=self._value_to_drop[col],
-                                             cast=col_to_type[col]))
+                                             cast=self._col_to_type[col]))
             if filter_clauses:
-                filter_str = "WHERE " + 'AND \n'.join(filter_clauses)
+                filter_str = "WHERE " + ' AND \n'.join(filter_clauses)
             else:
                 filter_str = ''
             top_val_sql_list.append("""
@@ -453,12 +447,14 @@ class CategoricalEncoder(object):
                 # need all values for this column since no top value provided
                 top_distinct_values[col] = ordered_values
         return top_distinct_values
+    # -------------------------------------------------------------------------
 
     def _get_distinct_values(self):
         """ Find distinct values of each categorical column
         """
-        array_agg_str = ',\n'.join("array_agg(DISTINCT {c}::text) AS {c}".
-                                   format(c=c) for c in self._output_cols)
+        array_agg_str = ',\n'.join('array_agg(DISTINCT {c}) AS {c_quoted}'.
+                                   format(c=c, c_quoted=quote_ident(c))
+                                   for c in self._output_cols)
 
         if self.keep_null:
             # Some platforms don't include NULL values as part of the
@@ -478,7 +474,9 @@ class CategoricalEncoder(object):
         distinct_values = {}
         for col in self._output_cols:
             distinct_values[col] = self._get_quoted_unquoted(col_values_data, col)
-            if col in self._value_to_drop:
+
+            if (col in self._value_to_drop and
+                    self._value_to_drop[col] in distinct_values):
                 distinct_values[col].remove(self._value_to_drop[col])
             if not self.keep_null:
                 if None in distinct_values[col]:
@@ -486,12 +484,13 @@ class CategoricalEncoder(object):
                     distinct_values[col].remove(None)
             else:
                 null_col_name = '"{c}_isnull"'.format(c=strip_end_quotes(col.strip()))
-                col_contains_null = self._get_quoted_unquoted(col_values_data, null_col_name)
+                col_contains_null = self._get_quoted_unquoted(col_values_data,
+                                                              null_col_name)
                 if col_contains_null and None not in distinct_values[col]:
                     distinct_values[col].append(None)
 
         return distinct_values
-    # ----------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def encode_categorical_variables(
@@ -524,7 +523,7 @@ def encode_categorical_variables(
 
     """
     # _validate_args()
-    with MinWarning('error'):
+    with MinWarning('warning'):
         encoder = CategoricalEncoder(schema_madlib, source_table, output_table,
                                      categorical_cols, categorical_cols_to_exclude,
                                      row_id, top, value_to_drop, keep_null,
@@ -535,7 +534,7 @@ def encode_categorical_variables(
 # ---------------------------------------------------------------
 
 
-def indicator_variables_help(schema_madlib, message, **kwargs):
+def encode_categorical_help(schema_madlib, message, **kwargs):
     """
     Help function for encode_categorical_variables
 
@@ -563,7 +562,7 @@ categorical variables like this need to be recoded into a series of indicator
 variables which can then be entered into the regression model.
 
 For more details on function usage:
-    SELECT {schema_madlib}.encode_categorical_variables('usage')
+    SELECT {madlib}.encode_categorical_variables('usage')
             """
     elif message in ['usage', 'help', '?']:
         help_string = """
@@ -573,12 +572,21 @@ For more details on function usage:
 
 
 -----------------------------------------------------------------------
-                            OUTPUT
+                           OUTPUT
+-----------------------------------------------------------------------
+"""
+    elif message in ['examples', 'example']:
+        help_string = """
+-----------------------------------------------------------------------
+                          EXAMPLES
 -----------------------------------------------------------------------
 
 """
     else:
-        help_string = "No such option. Use {schema_madlib}.encode_categorical_variables()"
+        help_string = """No such option.
 
-    return help_string.format(schema_madlib=schema_madlib)
+For more details on function usage:
+    SELECT {madlib}.encode_categorical_variables('usage')
+"""
+    return help_string.format(madlib=schema_madlib)
 # ---------------------------------------------------------------------
