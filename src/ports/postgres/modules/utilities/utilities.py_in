@@ -497,7 +497,8 @@ def preprocess_keyvalue_params(input_params, split_char='=', quote_char='"'):
 def extract_keyvalue_params(input_params,
                             input_param_types=None,
                             default_values=None,
-                            split_char='='):
+                            split_char='=',
+                            allow_duplicates=True):
     """ Extract key value pairs from input parameters or set the default values
 
     Args:
@@ -514,6 +515,10 @@ def extract_keyvalue_params(input_params,
         @param default_values: dict, Default values for each allowed parameter.
         @param split_char: str, The character used to split key and value.
                             Default set to '='
+        @param allow_duplicates: bool, Allow repeat of a 'key' in input_params,
+                                where the last occurence will be reflected
+                                in the output. If False, then a ValueError is
+                                raised.
 
     Returns:
         Dict. Dictionary of input parameter values with key as parameter name
@@ -540,12 +545,16 @@ def extract_keyvalue_params(input_params,
         if not param_name or param_name in ('none', 'null'):
             plpy.error("Invalid input param name: {0} ".format(str(param_name)))
 
+        if not allow_duplicates and param_name in parameter_dict:
+            raise ValueError("Invalid input: {0} duplicated in the param list".
+                             format(param_name))
+
         if input_param_types:
             try:
                 param_type = input_param_types[param_name]
             except KeyError:
-                raise KeyError("Invalid input: {0} is not a valid parameter".
-                               format(param_name))
+                raise ValueError("Invalid input: {0} is not a valid parameter".
+                                 format(param_name))
             try:
                 if param_type in (int, str, float):
                     parameter_dict[param_name] = param_type(param_value)

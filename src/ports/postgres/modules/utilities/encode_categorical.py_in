@@ -162,19 +162,47 @@ class CategoricalEncoder(object):
     # -------------------------------------------------------------------------
 
     def _parse_dictlike_parameters(self):
-        def _parse_dict_str(param, cast=str, allowed_global=True):
-            if param:
-                # param can be a mapping between col name and a value or ...
-                out_param = extract_keyvalue_params(param)
-                if not out_param and (allowed_global or len(self._output_cols) == 1):
-                    # ... a global value (without =) that applies to all columns
-                    out_param = dict([(i, cast(param)) for i in self._output_cols])
-                return out_param
+        def _cast_validate_top(val_str):
+            # each value of top can be either a float in (0.0, 1.0) or an integer
+            try:
+                val = float(val_str)
+                _assert(0 < val,
+                        "Encoding categorical error: top value should be positive")
+                if val >= 1:
+                    # if val >= 1 then it should be input as a valid integer
+                    # (e.g. 2 is valid but 2.0 is not)
+                    _assert(val_str.isdigit(),
+                            "Encoding categorical error: top value should "
+                            "be an integer if greater than or equal to 1")
+                    val = int(val_str)
+            except ValueError:
+                plpy.error("Encoding categorical error: top value ({0})"
+                           " is an invalid numeric value".format(val_str))
+            return val
+
+        if self.top:
+            # top can be a mapping between col name and a value or ...
+            out_param = extract_keyvalue_params(self.top, allow_duplicates=False)
+            if not out_param:
+                # ... a global value (without =) that applies to all columns
+                val = _cast_validate_top(self.top)
+                out_param = dict([(i, val) for i in self._output_cols])
             else:
-                return {}
-        self._value_to_drop = _parse_dict_str(self.value_to_drop, cast=str,
-                                              allowed_global=False)
-        self._top = _parse_dict_str(self.top, cast=float)
+                for k in out_param:
+                    out_param[k] = _cast_validate_top(out_param[k])
+            self._top = out_param
+        else:
+            self._top = {}
+
+        if self.value_to_drop:
+            # value_to_drop can be a mapping between col name and a value or ...
+            out_param = extract_keyvalue_params(self.value_to_drop, allow_duplicates=False)
+            if not out_param and (len(self._output_cols) == 1):
+                # ... a global value (without =) that applies to all columns
+                out_param = dict([(i, str(self.value_to_drop)) for i in self._output_cols])
+            self._value_to_drop = out_param
+        else:
+            self._value_to_drop = {}
     # -------------------------------------------------------------------------
 
     def _validate_parameters(self):
@@ -438,6 +466,8 @@ class CategoricalEncoder(object):
                             break
                         else:
                             covered_frac += freq
+                    else:
+                        n_values = i
                 if n_values < len(ordered_values):
                     top_distinct_values[col] = ordered_values[:n_values] + [list(ordered_values[n_values:])]
                 else:
@@ -473,32 +503,28 @@ class CategoricalEncoder(object):
         # Collect the distinct values (possibly including null) for every column
         distinct_values = {}
         for col in self._output_cols:
-            distinct_values[col] = [str(i).strip().lower() for i in
-                                    self._get_quoted_unquoted(col_values_data, col)]
+            dv = [str(i) if i is not None else i for i in col_values_data[col]]
             # drop reference from distinct values
-            if (col in self._value_to_drop):
-                drop_val = self._value_to_drop[col].lower()
-                if drop_val in distinct_values[col]:
-                    distinct_values[col].remove(drop_val)
+            if (col in self._value_to_drop and self._value_to_drop[col] in dv):
+                dv.remove(self._value_to_drop[col])
 
             # check for NULL values
             if not self.keep_null:
-                if None in distinct_values[col]:
+                if None in dv:
                     # ignore NULL if keep_null = False
-                    distinct_values[col].remove(None)
+                    dv.remove(None)
             else:
                 null_col_name = '"{c}_isnull"'.format(c=strip_end_quotes(col.strip()))
-                col_contains_null = self._get_quoted_unquoted(col_values_data,
-                                                              null_col_name)
-                if col_contains_null and None not in distinct_values[col]:
-                    distinct_values[col].append(None)
+                col_contains_null = col_values_data[null_col_name]
+                if col_contains_null and None not in dv:
+                    dv.append(None)
 
-            if not distinct_values[col]:
+            if not dv:
                 plpy.error("Encoding categorical error: "
                            "No distinct values found for {0} or "
-                           "all distinct values dropped using value_to_drop "
-                           "and keep_null".format(col))
-
+                           "all distinct values dropped as per function arguments"
+                           "(value_to_drop, keep_null)".format(col))
+            distinct_values[col] = list(sorted(dv))
         return distinct_values
 # ------------------------------------------------------------------------------
 

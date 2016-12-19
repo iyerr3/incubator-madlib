@@ -117,7 +117,7 @@ encode_categorical_variables (
 
     <dt>top (optional)</dt>
     <dd>VARCHAR. default: NULL.  If INTEGER, encodes the top n values
-    by frequency.  If FLOAT in the range (0.0, 1.0], encodes the specified fraction
+    by frequency.  If FLOAT in the range (0.0, 1.0), encodes the specified fraction
     of values by frequency (e.g., 0.1 means top 10%).  Can be specified as a global
     for all categorical columns, or as a dictionary with separate values for each
     categorical variable. Set to NULL to encode all levels (values) of all categorical
@@ -130,7 +130,8 @@ encode_categorical_variables (
     - For dummy coding, indicate the desired value (reference) to drop for each
     categorical variable. The expected input is a comma-separated text
     containing items of the form `name=value`, where 'name' is the column name
-    and 'value' is the reference value to be dropped.
+    and 'value' is the reference value to be dropped. Only one value per variable
+    is allowed.
 
     - Set to NULL for one-hot encoding (default)
     </dd>

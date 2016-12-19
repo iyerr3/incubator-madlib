@@ -8,6 +8,7 @@ database constructs.
 @namespace create_indicators
 """
 import plpy
+from control import MinWarning
 from utilities import _assert
 from utilities import split_quoted_delimited_str
 from utilities import strip_end_quotes
