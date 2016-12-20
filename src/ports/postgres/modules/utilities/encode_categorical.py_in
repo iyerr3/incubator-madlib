@@ -556,7 +556,6 @@ def encode_categorical_variables(
                     a separate mapping table is created to understand the names
         @param distributed_by: str, Comma-separated list of column names to use for distribution of output
     """
-    # _validate_args()
     with MinWarning('warning'):
         encoder = CategoricalEncoder(schema_madlib, source_table, output_table,
                                      categorical_cols, categorical_cols_to_exclude,

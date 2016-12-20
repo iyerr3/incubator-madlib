@@ -20,7 +20,7 @@ from validate_args import _get_table_schema_names
 from validate_args import get_first_schema
 
 m4_changequote(`<!', `!>')
-
+IS_POSTGRES = m4_ifdef(<!__POSTGRESQL__!>, <!True!>, <!False!>)
 # -----------------------------------------------------------------------
 # Deprecated functions corresponding to "create_indicators.sql_in"
 # -----------------------------------------------------------------------
@@ -73,17 +73,18 @@ def create_indicator_variables(schema_madlib, source_table, out_table,
                 sql_list.append(", (CASE WHEN \"{0}\" IS NULL THEN 1 ELSE 0 END) "
                                 "as \"{0}_NULL\"".format(col_no_quotes))
         sql_list.append(" FROM " + source_table + ") ")
-        m4_ifdef(<!__POSTGRESQL__!>, <!!>, <!
-        if distributed_by:
-            dist_str = distributed_by
-        else:
-            dist_str = ','.join(['"%s"'%i for i in get_distribution_policy(schema_madlib, source_table)
-                                 if i is not None])
-        if dist_str:
-            sql_list.append("distributed by (" + dist_str + ")")
-        else:
-            sql_list.append("distributed randomly")
-        !>)
+
+        if IS_POSTGRES:
+            if distributed_by:
+                dist_str = distributed_by
+            else:
+                dist_str = ','.join(['"%s"'%i
+                                     for i in get_distribution_policy(source_table)
+                                     if i is not None])
+            if dist_str:
+                sql_list.append("distributed by (" + dist_str + ")")
+            else:
+                sql_list.append("distributed randomly")
         plpy.execute(''.join(sql_list))
         return None
 # ---------------------------------------------------------------
@@ -110,7 +111,7 @@ def validate_dummy_coding(source_table, out_table, cols):
     _assert(columns_exist_in_table(source_table, cols),
             "Not all columns from {0} present in source table ({1})"
             .format(cols, source_table))
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 
 def indicator_variables_help(schema_madlib, message, **kwargs):
