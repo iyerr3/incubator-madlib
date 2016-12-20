@@ -10,6 +10,7 @@ database constructs.
 import plpy
 from control import MinWarning
 from utilities import _assert
+from utilities import get_distribution_policy
 from utilities import split_quoted_delimited_str
 from utilities import strip_end_quotes
 from validate_args import table_exists
