@@ -74,16 +74,16 @@ select madlib.encode_categorical_variables('abalone', 'abalone_out3',
                                            );
 select * from abalone_out3;
 
--- * working, exclude working without quoted names
+-- * working, exclude working, global value_to_drop working
 select madlib.encode_categorical_variables('abalone', 'abalone_out4',
                                            '*', '"Class"',
-                                           'id', '2', 'sex=M, Class=1',
+                                           'id', '2', 'M',
                                            true, false, false
                                            );
 select * from abalone_out4;
 
 -- array output working with dictionary output,
--- top with percent input, global value_to_drop ignored
+-- top with percent input, global value_to_drop
 select madlib.encode_categorical_variables('abalone', 'abalone_out5',
                                            'sex, "Class"', '',
                                            'id', '0.5', 'M',

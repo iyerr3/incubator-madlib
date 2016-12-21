@@ -197,7 +197,7 @@ class CategoricalEncoder(object):
         if self.value_to_drop:
             # value_to_drop can be a mapping between col name and a value or ...
             out_param = extract_keyvalue_params(self.value_to_drop, allow_duplicates=False)
-            if not out_param and (len(self._output_cols) == 1):
+            if not out_param:
                 # ... a global value (without =) that applies to all columns
                 out_param = dict([(i, str(self.value_to_drop)) for i in self._output_cols])
             self._value_to_drop = out_param
@@ -412,21 +412,11 @@ class CategoricalEncoder(object):
         """
         top_val_sql_list = []
         for col in self._output_cols:
-            filter_clauses = []
             if not self.keep_null:
-                filter_clauses.append('{col} IS NOT NULL'.format(col=col))
-            if col in self._value_to_drop:
-                # add clause to remove value from col selection.
-                # add the "IS NULL" condition to ensure removing the value does
-                # not filter out the NULL values as well
-                filter_clauses.append("({col} <> '{val}'::{cast} or {col} IS NULL)".
-                                      format(col=col,
-                                             val=self._value_to_drop[col],
-                                             cast=self._col_to_type[col]))
-            if filter_clauses:
-                filter_str = "WHERE " + ' AND \n'.join(filter_clauses)
+                filter_str = 'WHERE {col} IS NOT NULL'.format(col=col)
             else:
                 filter_str = ''
+            # get value distribution for each column independently
             top_val_sql_list.append("""
                 SELECT
                     '{col}' as col_name,
@@ -445,36 +435,50 @@ class CategoricalEncoder(object):
         # giving the frequency of the values in a column
         top_distinct_values = {}
         for each_col_data in top_values:
-            # for each column find at which point does the top 'k' values occur
-            # where 'k' can be described as a percentage of the total count
             col, ordered_values, ordered_freq = [each_col_data[i]
                                                  for i in ('col_name', 'value', 'freq')]
+            # drop reference from distinct values
+            if (col in self._value_to_drop):
+                drop_val = self._value_to_drop[col]
+                if drop_val in ordered_values:
+                    drop_index = ordered_values.index(drop_val)
+                    ordered_values.pop(drop_index)
+                    ordered_freq.pop(drop_index)
+
+            if not ordered_values:
+                plpy.error("Encoding categorical error: "
+                           "No top values found for {0} or "
+                           "all values dropped as per function arguments"
+                           "(value_to_drop, keep_null)".format(col))
+
             if col in self._top:
+                # for each column find at which point does the top 'k' values occur
                 top_arg = self._top[col]
                 if top_arg >= 1:
-                    # top >= 1 is considered a count of top values to pick ...
-                    n_values = int(top_arg)
+                    # top >= 1 is considered a integer count of values to pick ...
+                    k = int(top_arg)
                 else:
-                    # top < 1 is considered a percent of total count of the values
+                    # ..., top < 1 is considered a percent of total count
                     threshold = int(math.ceil(top_arg * sum(ordered_freq)))
                     covered_frac = 0
                     for i, freq in enumerate(ordered_freq):
                         # iterate ordered frequencies to find the point
                         # at which cumsum(freq) goes over the threshold
                         if covered_frac > threshold:
-                            n_values = i
+                            k = i
                             break
                         else:
                             covered_frac += freq
                     else:
-                        n_values = i
-                if n_values < len(ordered_values):
-                    top_distinct_values[col] = ordered_values[:n_values] + [list(ordered_values[n_values:])]
-                else:
-                    # this else clause avoids the empty list at the end
-                    top_distinct_values[col] = ordered_values
+                        k = i  # max k is len(ordered_values) - 1
+
+                top_distinct_values[col] = ordered_values[:k]
+                if k < len(ordered_values):
+                    # putting this into an if check avoids empty list
+                    # at the end when k >= actual number of values
+                    top_distinct_values[col] += [list(ordered_values[k:])]
             else:
-                # need all values for this column since no top value provided
+                # need all values for this column since no top provided
                 top_distinct_values[col] = ordered_values
         return top_distinct_values
     # -------------------------------------------------------------------------
