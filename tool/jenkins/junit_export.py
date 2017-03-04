@@ -52,9 +52,13 @@ def _add_footer(out_log):
 
 def _add_test_case(out_log, test_results):
     for res in test_results:
-        output = [('<testcase classname="{t.suite}" name="{t.name}" '
-                   'status="{t.status}" time="{time}">'.
-                   format(t=res, time=res.duration/1000))]
+        try:
+            duration = float(res.duration)/1000
+        except TypeError:
+            duration = 0.0
+        output = ['<testcase classname="{t.suite}" name="{t.name}" '
+                  'status="{t.status}" time="{d}">'.
+                  format(t=res, d=duration)]
         output.append('</testcase>')
         out_log.write('\n'.join(output))
 
