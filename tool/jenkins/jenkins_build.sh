@@ -28,6 +28,9 @@ workdir=`pwd`
 user_name=`whoami`
 echo "Build by user $user_name in directory $workdir"
 echo "-------------------------------"
+echo "ls -la"
+ls -la
+echo "-------------------------------"
 echo "rm -rf build"
 rm -rf build
 echo "-------------------------------"
@@ -46,7 +49,12 @@ echo "Creating docker container"
 # Pull down the base docker images
 docker pull madlib/postgres_9.6:jenkins
 # Launch docker container with volume mounted from workdir
-docker run -d --name madlib -v "${workdir}":/incubator-madlib madlib/postgres_9.6:jenkins | tee logs/docker_setup.log
+echo "-------------------------------"
+cat <<EOF
+docker run -d --name madlib -v "${workdir}/incubator-madlib":/incubator-madlib madlib/postgres_9.6:jenkins | tee logs/docker_setup.log
+EOF
+docker run -d --name madlib -v "${workdir}/incubator-madlib":/incubator-madlib madlib/postgres_9.6:jenkins | tee logs/docker_setup.log
+echo "-------------------------------"
 
 ## This sleep is required since it takes a couple of seconds for the docker
 ## container to come up, which is required by the docker exec command that follows.
@@ -78,4 +86,4 @@ ls -la build/
 echo "-------------------------------"
 
 # convert install-check test results to junit format for reporting
-python tool/jenkins/junit_export.py $workdir/logs/madlib_install_check.log $workdir/logs/madlib_install_check.xml
+python incubator-madlib/tool/jenkins/junit_export.py $workdir/logs/madlib_install_check.log $workdir/logs/madlib_install_check.xml
