@@ -1,0 +1,81 @@
+# coding=utf-8
+
+"""
+@file mlp_igd.py_in
+
+@brief Multilayer perceptron using IGD: Driver functions
+
+@namespace mlp_igd
+"""
+import plpy
+
+from utilities.control import MinWarning
+from utilities.utilities import py_list_to_sql_string
+
+
+def validate_args(**kwargs):
+    """
+    Args:
+        @param kwargs
+
+    Returns:
+
+    """
+    pass
+# ----------------------------------------------------------------------
+
+
+def mlp(schema_madlib, rel_source, rel_output, input_vector, output_vector,
+        n_units, step_size, n_iterations, tolerance, **kwargs):
+    """
+    Args:
+        @param schema_madlib
+        @param rel_output
+        @param rel_source
+        @param input_vector
+        @param output_vector
+
+    Returns:
+        None
+    """
+    with MinWarning('info'):
+        validate_args(**locals())
+        iteration = 1
+        prev_state = None
+        while True:
+            if prev_state:
+                prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
+            else:
+                prev_state_str = "(NULL)::DOUBLE PRECISION[]"
+            train_sql = """
+                SELECT
+                    {schema_madlib}.mlp_igd_step(
+                        ({input_vector})::DOUBLE PRECISION[],
+                        ({output_vector})::DOUBLE PRECISION[],
+                        {prev_state},
+                        {n_units},
+                        ({step_size})::FLOAT8) as curr_state
+                FROM {rel_source} AS _src""".format(
+                schema_madlib=schema_madlib,
+                input_vector=input_vector,
+                output_vector=output_vector,
+                prev_state=prev_state_str,
+                n_units=py_list_to_sql_string(n_units, array_type="integer"),
+                step_size=step_size,
+                rel_source=rel_source)
+            curr_state = plpy.execute(train_sql)[0]["curr_state"]
+            dist_sql = """
+                SELECT {schema_madlib}.internal_mlp_igd_distance(
+                        {prev_state},
+                        {curr_state}) as state_dist
+                """.format(schema_madlib=schema_madlib,
+                           prev_state=prev_state_str,
+                           curr_state=py_list_to_sql_string(curr_state, "double precision"),
+                           tolerance=tolerance)
+            state_dist = plpy.execute(dist_sql)[0]["state_dist"]
+            if ((state_dist and state_dist < tolerance) or
+                    iteration > n_iterations):
+                break
+            prev_state = curr_state
+            iteration += 1
+# ----------------------------------------------------------------------

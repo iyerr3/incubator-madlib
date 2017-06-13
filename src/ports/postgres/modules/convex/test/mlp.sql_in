@@ -1,0 +1,83 @@
+/* -----------------------------------------------------------------------------
+ * Test Multilayer perceptron
+ * -------------------------------------------------------------------------- */
+-- CREATE FUNCTION check_rmse()
+-- RETURNS VOID AS $$
+-- DECLARE
+--     model_id    INTEGER;
+-- BEGIN
+--     SELECT lmf_igd_run(
+--         'test_lmf_model',
+--         'mlens100k',
+--         'user_id',
+--         'movie_id',
+--         'rating',
+--         943,        -- row_dim
+--         1682,       -- col_dim
+--         2,          -- max_rank
+--         0.03,       -- stepsize
+--         0.1,        -- init_value
+--         5,          -- num_iterations
+--         1e-3        -- tolerance
+--         )
+--     INTO model_id;
+
+--     PERFORM assert(
+--         rmse < 2.0,
+--         'Low-rank Matrix Factorization using incremental gradient: RMSE is too high (> 2.0). Wrong result.'
+--     ) FROM test_lmf_model
+--     WHERE test_lmf_model.id = model_id;
+-- END;
+-- $$ LANGUAGE plpgsql VOLATILE;
+
+-- SELECT check_rmse();
+
+/*
+ * The following example is taken from:
+ * http://luna.cas.usf.edu/~mbrannic/files/regression/Logistic.html
+ * Predicting heart attack
+ */
+DROP TABLE IF EXISTS patients;
+CREATE TABLE patients (
+    id INTEGER NOT NULL,
+    second_attack INTEGER,
+    treatment INTEGER,
+    trait_anxiety INTEGER
+    m4_ifdef(`__HAWQ__', `', `, CONSTRAINT pk_patient PRIMARY key (id)')
+);
+
+INSERT INTO patients(ID, second_attack, treatment, trait_anxiety) VALUES
+( 1, 1, 1, 70),
+( 2, 1, 1, 80),
+( 3, 1, 1, 50),
+( 4, 1, 0, 60),
+( 5, 1, 0, 40),
+( 6, 1, 0, 65),
+( 7, 1, 0, 75),
+( 8, 1, 0, 80),
+( 9, 1, 0, 70),
+(10, 1, 0, 60),
+(11, 0, 1, 65),
+(12, 0, 1, 50),
+(13, 0, 1, 45),
+(14, 0, 1, 35),
+(15, 0, 1, 40),
+(16, 0, 1, 50),
+(17, 0, 0, 55),
+(18, 0, 0, 45),
+(19, 0, 0, 50),
+(20, 0, 0, 60);
+
+drop table if exists temp_result;
+drop table if exists temp_result_summary;
+select mlp(
+    'patients',
+    'temp_result',
+    'ARRAY[second_attack]',
+    'ARRAY[1, treatment, trait_anxiety]',
+    ARRAY[3, 2, 1],
+    0.00001,
+    10,
+    0.01
+);
+

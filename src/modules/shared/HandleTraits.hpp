@@ -21,7 +21,7 @@ namespace modules {
  * the composite type "inherit" their mutability from the array. To that end,
  * HandleTraits takes a Handle type as template argument and correspondingly
  * defines mutable or immutable reference types.
- * 
+ *
  * @note
  *     HandleTraits are used for strict type safety and const-correctness.
  *     Just using <tt>const_cast</tt> is arguably a bit shorter, but less
@@ -45,6 +45,9 @@ struct HandleTraits<ArrayHandle<double> > {
     typedef utils::Reference<double, bool> ReferenceToBool;
     typedef utils::Reference<double> ReferenceToDouble;
     typedef const double* DoublePtr;
+    typedef const uint16_t* UInt16Ptr;
+    typedef const uint32_t* UInt32Ptr;
+    typedef const int32_t* Int32Ptr;
     typedef dbal::eigen_integration::HandleMap<
         const ColumnVector, TransparentHandle<double, dbal::Immutable> >
         ColumnVectorTransparentHandleMap;
@@ -65,6 +68,9 @@ struct HandleTraits<MutableArrayHandle<double> > {
     typedef utils::MutableReference<double, bool> ReferenceToBool;
     typedef utils::MutableReference<double> ReferenceToDouble;
     typedef double* DoublePtr;
+    typedef uint16_t* UInt16Ptr;
+    typedef uint32_t* UInt32Ptr;
+    typedef int32_t* Int32Ptr;
     typedef dbal::eigen_integration::HandleMap<ColumnVector,
         TransparentHandle<double, dbal::Mutable> >
             ColumnVectorTransparentHandleMap;
