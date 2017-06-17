@@ -1,0 +1,155 @@
+# coding=utf-8
+
+"""
+@file mlp_igd.py_in
+
+@brief Multilayer perceptron using IGD: Driver functions
+
+@namespace mlp_igd
+"""
+import plpy
+
+from utilities.control import MinWarning
+from utilities.utilities import py_list_to_sql_string
+from utilities.utilities import extract_keyvalue_params
+from utilities.validate_args import output_tbl_valid
+
+
+def validate_args(**kwargs):
+    """
+    Args:
+        @param kwargs
+
+    Returns:
+
+    """
+    output_tbl_valid(kwargs["output_table"], "MLP")
+    pass
+# ----------------------------------------------------------------------
+
+
+def mlp(schema_madlib, source_table, output_table, independent_varname,
+        dependent_varname, n_hidden_units_per_layer,
+        optimizer_param_str, is_classification, **kwargs):
+    """
+    Args:
+        @param schema_madlib
+        @param output_table
+        @param source_table
+        @param independent_varname
+        @param dependent_varname
+
+    Returns:
+        None
+    """
+    with MinWarning('info'):
+
+
+        optimizer_params = _get_optimizer_params(optimizer_param_str)
+        validate_args(**locals())
+        n_iterations = 1
+        prev_state = None
+        tolerance = optimizer_params["tolerance"]
+        while True:
+            if prev_state:
+                prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
+            else:
+                prev_state_str = "(NULL)::DOUBLE PRECISION[]"
+            train_sql = """
+                SELECT
+                    {schema_madlib}.mlp_igd_step(
+                        ({independent_varname})::DOUBLE PRECISION[],
+                        ({dependent_varname})::DOUBLE PRECISION[],
+                        {prev_state},
+                        {n_hidden_units_per_layer},
+                        ({step_size})::FLOAT8,
+                        {is_classification}) as curr_state
+                FROM {source_table} AS _src""".format(
+                schema_madlib=schema_madlib,
+                independent_varname=independent_varname,
+                dependent_varname=dependent_varname,
+                prev_state=prev_state_str,
+                n_hidden_units_per_layer=py_list_to_sql_string(n_hidden_units_per_layer, array_type="integer"),
+                step_size=optimizer_params["step_size"],
+                source_table=source_table)
+            curr_state = plpy.execute(train_sql)[0]["curr_state"]
+            dist_sql = """
+                SELECT {schema_madlib}.internal_mlp_igd_distance(
+                        {prev_state},
+                        {curr_state}) as state_dist
+                """.format(schema_madlib=schema_madlib,
+                           prev_stte=prev_state_str,
+                           curr_state=py_list_to_sql_string(curr_state, "double precision"),
+                           tolerance=tolerance)
+            state_dist = plpy.execute(dist_sql)[0]["state_dist"]
+            if ((state_dist and state_dist < tolerance) or
+                    n_iterations > optimizer_params["n_iterations"]):
+                break
+            prev_state = curr_state
+            n_iterations += 1
+        _build_output_tables(schema_madlib, output_table, curr_state, n_iterations)
+# ----------------------------------------------------------------------
+
+
+def _build_output_tables(schema_madlib, output_table, final_state, n_iterations):
+    final_state_str = py_list_to_sql_string(final_state, array_type="double precision")
+
+    model_table_query = """
+        CREATE TABLE {output_table} AS
+            SELECT
+                (result).coeff AS coeff,
+                (result).loss           AS loss,
+                {n_iterations}                       AS num_iterations
+                -- (result).num_rows_processed     AS num_rows_processed,
+                -- n_tuples_including_nulls - (result).num_rows_processed
+            FROM
+            (
+                SELECT
+                    {schema_madlib}.internal_mlp_igd_result(
+                        {final_state_str}
+                    ) AS result
+            ) rel_state_subq
+        """.format(**locals())
+    plpy.execute(model_table_query)
+# ----------------------------------------------------------------------
+
+
+def _get_optimizer_params(param_str):
+    params_defaults = {
+        "step_size": (0.01, float),
+        "n_iterations": (100, int),
+        "n_tries": (1, int),
+        "tolerance": (0.001, float),
+    }
+    param_defaults = dict([(k, v[0]) for k, v in params_defaults.items()])
+    param_types = dict([(k, v[1]) for k, v in params_defaults.items()])
+
+    if not param_str:
+        return param_defaults, param_str
+
+    name_value = extract_keyvalue_params(param_str, param_types, param_defaults,
+                                         ignore_invalid=True)
+    return name_value
+# ----------------------------------------------------------------------
+
+
+
+def _get_activation_function_name(activation_function):
+    if not activation_function:
+        activation_function = 'sigmoid'
+    else:
+        # Add non-linear kernels below after implementing them.
+        supported_activation_function = ['sigmoid', 'tanh', 'relu']
+        try:
+            # allow user to specify a prefix substring of
+            # supported kernels. This works because the supported
+            # kernels have unique prefixes.
+            activation_function = next(x for x in supported_activation_function
+                    if x.startswith(activation_function))
+        except StopIteration:
+            # next() returns a StopIteration if no element found
+            plpy.error("SVM Error: Invalid activation function: "
+                       "{0}. Supported activation functions are ({1})"
+                       .format(activation_function, ','.join(sorted(supported_activation_function))))
+    return activation_function
+# ------------------------------------------------------------------------------

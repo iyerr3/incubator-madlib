@@ -1,0 +1,123 @@
+/* ----------------------------------------------------------------------- *//**
+ *
+ * @file mlp.sql_in
+ *
+ * @brief SQL functions for multi-layer perceptron
+ * @date June 2012
+ *
+ *
+ *//* ----------------------------------------------------------------------- */
+
+m4_include(`SQLCommon.m4')
+
+
+CREATE TYPE MADLIB_SCHEMA.mlp_result AS (
+        coeff    DOUBLE PRECISION[],
+        loss     DOUBLE PRECISION
+);
+
+--------------------------------------------------------------------------
+-- create SQL functions for IGD optimizer
+--------------------------------------------------------------------------
+CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_transition(
+        state           DOUBLE PRECISION[],
+        start_vec       DOUBLE PRECISION[],
+        end_vec         DOUBLE PRECISION[],
+        previous_state  DOUBLE PRECISION[],
+        num_units       INTEGER[],
+        stepsize        DOUBLE PRECISION,
+        is_classification BOOLEAN)
+RETURNS DOUBLE PRECISION[]
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE;
+
+CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_merge(
+        state1 DOUBLE PRECISION[],
+        state2 DOUBLE PRECISION[])
+RETURNS DOUBLE PRECISION[]
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_final(
+        state DOUBLE PRECISION[])
+RETURNS DOUBLE PRECISION[]
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+/**
+ * @internal
+ * @brief Perform one iteration of the incremental gradient
+ *        method for computing low-rank matrix factorization
+ */
+CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
+        /* start_vec*/        DOUBLE PRECISION[],
+        /* end_vec */         DOUBLE PRECISION[],
+        /* previous_state */  DOUBLE PRECISION[],
+        /* num_units */       INTEGER[],
+        /* stepsize */        DOUBLE PRECISION,
+        /* is_classification */ BOOLEAN )(
+    STYPE=DOUBLE PRECISION[],
+    SFUNC=MADLIB_SCHEMA.mlp_igd_transition,
+    m4_ifdef(`GREENPLUM',`prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
+    FINALFUNC=MADLIB_SCHEMA.mlp_igd_final,
+    INITCOND='{0,0,0,0,0,0,0,0,0}'
+);
+-------------------------------------------------------------------------
+
+CREATE FUNCTION MADLIB_SCHEMA.internal_mlp_igd_distance(
+    /*+ state1 */ DOUBLE PRECISION[],
+    /*+ state2 */ DOUBLE PRECISION[])
+RETURNS DOUBLE PRECISION AS
+'MODULE_PATHNAME'
+LANGUAGE c IMMUTABLE STRICT;
+
+CREATE FUNCTION MADLIB_SCHEMA.internal_mlp_igd_result(
+    /*+ state */ DOUBLE PRECISION[])
+RETURNS MADLIB_SCHEMA.mlp_result AS
+'MODULE_PATHNAME'
+LANGUAGE c IMMUTABLE STRICT;
+-------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_classification(
+    rel_source      VARCHAR,
+    rel_output      VARCHAR,
+    input_vector    VARCHAR,
+    output_vector   VARCHAR,
+    n_units         INTEGER[],
+    optimizer_params   VARCHAR
+) RETURNS VOID AS $$
+    PythonFunctionBodyOnly(`convex', `mlp_igd')
+    mlp_igd.mlp(
+        schema_madlib,
+        rel_source,
+        rel_output,
+        input_vector,
+        output_vector,
+        n_units,
+        optimizer_params,
+        True
+    )
+$$ LANGUAGE plpythonu VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_regression(
+    rel_source      VARCHAR,
+    rel_output      VARCHAR,
+    input_vector    VARCHAR,
+    output_vector   VARCHAR,
+    n_units         INTEGER[],
+    optimizer_params   VARCHAR
+) RETURNS VOID AS $$
+    PythonFunctionBodyOnly(`convex', `mlp_igd')
+    mlp_igd.mlp(
+        schema_madlib,
+        rel_source,
+        rel_output,
+        input_vector,
+        output_vector,
+        n_units,
+        optimizer_params,
+        False
+    )
+$$ LANGUAGE plpythonu VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
