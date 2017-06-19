@@ -556,7 +556,7 @@ def input_tbl_valid(tbl, module, check_empty=True):
 
 
 def output_tbl_valid(tbl, module):
-    if tbl is None or tbl.strip() == '':
+    if tbl is None or tbl.strip().lower() in ['','null']:
         plpy.error("{module} error: NULL/empty output table name!".format(**locals()))
 
     if table_exists(tbl, only_first_schema=True):

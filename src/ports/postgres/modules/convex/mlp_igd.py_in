@@ -13,9 +13,29 @@ from utilities.control import MinWarning
 from utilities.utilities import py_list_to_sql_string
 from utilities.utilities import extract_keyvalue_params
 from utilities.validate_args import output_tbl_valid
+from utilities.validate_args import input_tbl_valid
+from utilities.validate_args import is_var_valid
+from utilities.validate_args import table_exists
+from utilities.validate_args import get_expr_type
+from utilities.utilities import _assert
 
 
-def validate_args(**kwargs):
+def _validate_args_classification(source_table, output_table, independent_varname,
+        dependent_varname, hidden_layer_sizes,
+        optimizer_params):
+    pass
+# ----------------------------------------------------------------------
+
+def _validate_args_regression(source_table, output_table, independent_varname,
+        dependent_varname, hidden_layer_sizes,
+        optimizer_params):
+    _assert("[]" in get_expr_type(dependent_varname,source_table),"Dependent variable column should refer to an array")
+# ----------------------------------------------------------------------
+
+
+def _validate_args(source_table, output_table, independent_varname,
+        dependent_varname, hidden_layer_sizes,
+        optimizer_params, is_classification):
     """
     Args:
         @param kwargs
@@ -23,21 +43,51 @@ def validate_args(**kwargs):
     Returns:
 
     """
-    output_tbl_valid(kwargs["output_table"], "MLP")
-    pass
+    input_tbl_valid(source_table, "MLP")
+    output_tbl_valid(output_table, "MLP")
+    _assert(is_var_valid(source_table, independent_varname),
+            "MLP error: invalid independent_varname "
+            "('{independent_varname}') for source_table "
+            "({source_table})!".format(independent_varname=independent_varname,
+                                       source_table=source_table))
+
+    _assert(is_var_valid(source_table, dependent_varname),
+            "MLP error: invalid dependent_varname "
+            "('{dependent_varname}') for source_table "
+            "({source_table})!".format(dependent_varname=dependent_varname,
+                                       source_table=source_table))
+
+
+    _assert(all(type(value) is int for value in hidden_layer_sizes), "MLP error: Hidden layers sizes must be integers")
+    _assert(all(value >= 0 for value in hidden_layer_sizes),"MLP error: Hidden layers sizes must be greater than 0.")
+    _assert(optimizer_params["tolerance"]>=0,"MLP error: Tolerance should be greater than or equal to 0.")
+    _assert(optimizer_params["n_tries"]>=1,"MLP error: Number of tries should be greater than or equal to 1")
+    _assert(optimizer_params["n_iterations"]>=1,"MLP error: Number of iterations should be greater than or equal to 1")
+    _assert(optimizer_params["step_size"]>0,"MLP error: Stepsize should be greater than 0.")
+    _assert("[]" in get_expr_type(independent_varname,source_table),"Independent variable column should refer to an array")
+    if is_classification:
+        _validate_args_classification(source_table, output_table, independent_varname,
+        dependent_varname, hidden_layer_sizes,
+        optimizer_params)
+    else:
+        _validate_args_regression(source_table, output_table, independent_varname,
+        dependent_varname, hidden_layer_sizes,
+        optimizer_params)
 # ----------------------------------------------------------------------
 
 
 def mlp(schema_madlib, source_table, output_table, independent_varname,
-        dependent_varname, n_hidden_units_per_layer,
+        dependent_varname, hidden_layer_sizes,
         optimizer_param_str, is_classification, **kwargs):
     """
     Args:
         @param schema_madlib
-        @param output_table
         @param source_table
+        @param output_table
         @param independent_varname
         @param dependent_varname
+        @param hidden_layer_sizes
+        @param optimizer_param_str
 
     Returns:
         None
@@ -46,7 +96,10 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
 
 
         optimizer_params = _get_optimizer_params(optimizer_param_str)
-        validate_args(**locals())
+        _validate_args(source_table, output_table, independent_varname,
+        dependent_varname, hidden_layer_sizes,
+        optimizer_params, is_classification)
+
         n_iterations = 1
         prev_state = None
         tolerance = optimizer_params["tolerance"]
@@ -61,7 +114,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                         ({independent_varname})::DOUBLE PRECISION[],
                         ({dependent_varname})::DOUBLE PRECISION[],
                         {prev_state},
-                        {n_hidden_units_per_layer},
+                        {hidden_layer_sizes},
                         ({step_size})::FLOAT8,
                         {is_classification}) as curr_state
                 FROM {source_table} AS _src""".format(
@@ -69,7 +122,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 independent_varname=independent_varname,
                 dependent_varname=dependent_varname,
                 prev_state=prev_state_str,
-                n_hidden_units_per_layer=py_list_to_sql_string(n_hidden_units_per_layer, array_type="integer"),
+                hidden_layer_sizes=py_list_to_sql_string(hidden_layer_sizes, array_type="integer"),
                 step_size=optimizer_params["step_size"],
                 source_table=source_table)
             curr_state = plpy.execute(train_sql)[0]["curr_state"]
@@ -153,3 +206,7 @@ def _get_activation_function_name(activation_function):
                        .format(activation_function, ','.join(sorted(supported_activation_function))))
     return activation_function
 # ------------------------------------------------------------------------------
+
+def mlp_regression_help
+    return ""
+    """

@@ -1,7 +1,7 @@
 -- The data were collected by Anderson, Edgar (1935).
 -- The irises of the Gaspe Peninsula, Bulletin of the American Iris Society, 59, 2–5.
 
-DROP TABLE IF EXISTS iris_data, iris_test CASCADE;
+DROP TABLE IF EXISTS iris_data, iris_test, mlp_temp_result CASCADE;
 CREATE TABLE iris_data(
     id integer,
     attributes numeric[],
@@ -114,7 +114,7 @@ INSERT INTO iris_data VALUES
 
 SELECT mlp(
     'iris_data',      -- Source table
-    'temp_result',    -- Desination table
+    'mlp_temp_result',    -- Desination table
     'ARRAY[class]',   -- Label
     'attributes',     -- Input features
     ARRAY[4,5,1],     -- Number of units per layer
