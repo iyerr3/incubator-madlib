@@ -113,6 +113,9 @@ MLP<Model, Tuple>::gradientInPlace(
             }
         }
     }
+    std::stringstream w;
+    w << model.u[0];
+    //elog(INFO, "%s", w.str().c_str());
 }
 
 template <class Model, class Tuple>
@@ -127,6 +130,10 @@ MLP<Model, Tuple>::loss(
     feedForward(model, y, net, x);
     double loss = 0.;
     uint16_t j;
+
+    Index index_max;
+    x.back().tail(z.rows()).maxCoeff(&index_max);
+    elog(INFO,"Prediction: %d",int(index_max));
     for (j = 1; j < z.rows() + 1; j ++) {
         double diff = x.back()(j) - z(j-1);
         loss += diff * diff;
@@ -158,7 +165,7 @@ MLP<Model, Tuple>::feedForward(
         const model_type                    &model,
         const independent_variables_type    &y,
         std::vector<ColumnVector>           &net,
-        std::vector<ColumnVector>           &x) {
+        std::vector<ColumnVector>           &x){
     // meta data and x_k^0 = 1
     uint16_t k, j, s;
     uint16_t N = model.u.size(); // assuming >= 1
@@ -197,10 +204,18 @@ MLP<Model, Tuple>::feedForward(
             x[N](j) += x[N-1](s) * model.u[N-1](s, j);
         }
     }
-    if(is_classification){
-        x[N] = x[N].exp();
-        x[N] /= x[N].sum();
+    ColumnVector last_x = x[N].tail(n[N]);
+    if(model.is_classification){
+        double max_x = last_x.maxCoeff();
+        //max_x = 0;
+        //elog(INFO,"%f",max_x);
+        last_x = (last_x.array() - max_x).exp();
+        last_x /= last_x.sum();
     }
+    x[N].tail(n[N]) = last_x;
+    std::stringstream debug;
+    debug << x[N];
+    //elog(INFO, "%s", debug.str().c_str());
 }
 
 template <class Model, class Tuple>

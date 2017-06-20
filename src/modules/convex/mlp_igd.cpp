@@ -79,8 +79,13 @@ mlp_igd_transition::run(AnyType &args) {
             state.allocate(*this, numbersOfUnits.size() - 1,
                            reinterpret_cast<const int *>(numbersOfUnits.ptr()));
             state.task.stepsize = stepsize;
-            state.task.is_classification = is_classification;
-            state.task.model.initialize();
+
+            int is_classification = args[6].getAs<int>();
+            if (!( is_classification  == 0) && !( is_classification  == 1)) {
+                elog(INFO,"%d",is_classification);
+                throw std::runtime_error("Invalid parameter: is_classification should be 0 or 1");
+            }
+            state.task.model.initialize(is_classification);
         }
 
         // resetting in either case

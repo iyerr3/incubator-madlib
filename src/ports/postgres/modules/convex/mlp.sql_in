@@ -26,7 +26,7 @@ CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_transition(
         previous_state  DOUBLE PRECISION[],
         num_units       INTEGER[],
         stepsize        DOUBLE PRECISION,
-        is_classification BOOLEAN)
+        is_classification INTEGER)
 RETURNS DOUBLE PRECISION[]
 AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE;
@@ -55,7 +55,7 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
         /* previous_state */  DOUBLE PRECISION[],
         /* num_units */       INTEGER[],
         /* stepsize */        DOUBLE PRECISION,
-        /* is_classification */ BOOLEAN )(
+        /* is_classification */ INTEGER )(
     STYPE=DOUBLE PRECISION[],
     SFUNC=MADLIB_SCHEMA.mlp_igd_transition,
     m4_ifdef(`GREENPLUM',`prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
