@@ -133,6 +133,10 @@ struct MLPModel {
         is_classification = is_classification_in;
         // using madlib::dbconnector::$database::NativeRandomNumberGenerator
         NativeRandomNumberGenerator rng;
+
+        // Scaling factor for weight initialization
+        double epsilon = 0.0001;
+
         //rng.seed(0);
 
         double base = rng.min();
@@ -153,7 +157,11 @@ struct MLPModel {
                 // #TODO is this the input layer? Should it have weight 1?
                 u[k-1](s,0)=1;
                 for (j=1; j <= n[k]; j++){
-                    u[k-1](s,j) = (rng()-base)/span;
+                    // Generate normal(0,epsilon) value using Box-Muller transform
+                    double u1 = (rng()-base)/span;
+                    double u2 = (rng()-base)/span;
+                    double z = std::sqrt(-2*std::log(u1))*std::cos(2*M_PI*u2);
+                    u[k-1](s,j) = epsilon*z;
                 }
             }
         }

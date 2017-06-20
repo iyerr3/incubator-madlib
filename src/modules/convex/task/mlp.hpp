@@ -113,9 +113,6 @@ MLP<Model, Tuple>::gradientInPlace(
             }
         }
     }
-    std::stringstream w;
-    w << model.u[0];
-    //elog(INFO, "%s", w.str().c_str());
 }
 
 template <class Model, class Tuple>
@@ -131,9 +128,6 @@ MLP<Model, Tuple>::loss(
     double loss = 0.;
     uint16_t j;
 
-    Index index_max;
-    x.back().tail(z.rows()).maxCoeff(&index_max);
-    elog(INFO,"Prediction: %d",int(index_max));
     for (j = 1; j < z.rows() + 1; j ++) {
         double diff = x.back()(j) - z(j-1);
         loss += diff * diff;
@@ -204,18 +198,14 @@ MLP<Model, Tuple>::feedForward(
             x[N](j) += x[N-1](s) * model.u[N-1](s, j);
         }
     }
+    // Numerically stable calculation of softmax
     ColumnVector last_x = x[N].tail(n[N]);
     if(model.is_classification){
         double max_x = last_x.maxCoeff();
-        //max_x = 0;
-        //elog(INFO,"%f",max_x);
         last_x = (last_x.array() - max_x).exp();
         last_x /= last_x.sum();
     }
     x[N].tail(n[N]) = last_x;
-    std::stringstream debug;
-    debug << x[N];
-    //elog(INFO, "%s", debug.str().c_str());
 }
 
 template <class Model, class Tuple>
@@ -233,8 +223,7 @@ MLP<Model, Tuple>::endLayerDeltaError(
 
     for (t = 1; t <= n_N; t ++) {
         // #TODO in the case of classification do not need derivative
-        //delta_N(t) = (x[N](t) - z(t-1)) * logisticDerivative(net[N](t));
-        delta_N(t) = (x[N](t) - z(t-1));
+		delta_N(t) = (x[N](t) - z(t-1));
     }
 }
 
