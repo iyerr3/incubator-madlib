@@ -102,6 +102,7 @@ typedef HandleTraits<MutableArrayHandle<double> >::ColumnVectorTransparentHandle
 template <class Handle>
 struct MLPModel {
     typename HandleTraits<Handle>::ReferenceToUInt16 is_classification;
+    typename HandleTraits<Handle>::ReferenceToUInt16 activation;
     std::vector<Eigen::Map<Matrix > > u;
 
     /**
@@ -123,21 +124,22 @@ struct MLPModel {
             size += (n[k-1] + 1) * (n[k] + 1);
         }
         return 1 +       // is_classification
-               size;    // weights (u)
+               1 +       // activation
+               size;     // weights (u)
     }
 
     /**
      * @brief Initialize the model randomly
      */
-    void initialize(int is_classification_in) {
+    void initialize(int is_classification_in, int activation_in) {
         is_classification = is_classification_in;
+        activation = activation_in;
         // using madlib::dbconnector::$database::NativeRandomNumberGenerator
         NativeRandomNumberGenerator rng;
 
         // Scaling factor for weight initialization
         double epsilon = 0.0001;
 
-        //rng.seed(0);
 
         double base = rng.min();
         double span = rng.max() - base;
@@ -174,7 +176,8 @@ struct MLPModel {
         size_t k;
 
         is_classification.rebind(&data[0]);
-        uint32_t sizeOfU = 1;  // starts from 1 since is_classification is at 0
+        activation.rebind(&data[1]);
+        uint32_t sizeOfU = 2;  // starts from 2 since is_classification is at 0 and activation is at 1
         u.clear();
         for (k = 1; k <= N; k ++) {
             u.push_back(Eigen::Map<Matrix >(

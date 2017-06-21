@@ -22,7 +22,7 @@ from utilities.utilities import _assert
 
 def mlp(schema_madlib, source_table, output_table, independent_varname,
         dependent_varname, hidden_layer_sizes,
-        optimizer_param_str, is_classification, **kwargs):
+        optimizer_param_str, activation, is_classification, **kwargs):
     """
     Args:
         @param schema_madlib
@@ -47,6 +47,9 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         n_iterations = 1
         prev_state = None
         tolerance = optimizer_params["tolerance"]
+        activation_name = _get_activation_function_name(activation)
+        activation_index = _get_activation_index(activation_name)
+        plpy.info("Index: ",activation_index)
         while True:
             if prev_state:
                 prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
@@ -60,6 +63,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                         {prev_state},
                         {hidden_layer_sizes},
                         ({step_size})::FLOAT8,
+                        {activation},
                         {is_classification}) as curr_state
                 FROM {source_table} AS _src""".format(
                 schema_madlib=schema_madlib,
@@ -69,6 +73,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 hidden_layer_sizes=py_list_to_sql_string(hidden_layer_sizes, array_type="integer"),
                 step_size=optimizer_params["step_size"],
                 source_table=source_table,
+                activation=activation_index,
                 is_classification=int(is_classification))
             curr_state = plpy.execute(train_sql)[0]["curr_state"]
             dist_sql = """
@@ -211,3 +216,6 @@ def _get_activation_function_name(activation_function):
 # def mlp_regression_help
     # return ""
     # """
+def _get_activation_index(activation_name):
+    table = {"relu":0,"sigmoid":1,"tanh":2}
+    return table[activation_name]

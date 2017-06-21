@@ -45,14 +45,34 @@ public:
             dependent_variable_type             &x_N);
 
 private:
-    static double logistic(const double         &xi) {
+    const static int RELU = 0;
+    const static int SIGMOID = 1;
+    const static int TANH = 2;
+
+    static double sigmoid(const double &xi) {
         return 1. / (1. + std::exp(-xi));
     }
 
-    static double logisticDerivative(
-            const double                        &xi) {
-        double value = logistic(xi);
+    static double sigmoidDerivative(const double &xi) {
+        double value = sigmoid(xi);
         return value * (1. - value);
+    }
+
+    static double relu(const double &xi) {
+        return xi*(xi>0);
+    }
+
+    static double reluDerivative(const double &xi) {
+        return xi>0;
+    }
+
+    static double tanh(const double &xi) {
+        return std::tanh(xi);
+    }
+
+    static double tanhDerivative(const double &xi) {
+        double value = tanh(xi);
+        return 1-value*value;
     }
 
     static void feedForward(
@@ -161,6 +181,7 @@ MLP<Model, Tuple>::feedForward(
         std::vector<ColumnVector>           &net,
         std::vector<ColumnVector>           &x){
     // meta data and x_k^0 = 1
+    //elog(INFO,"Activation: %d",(int)model.activation);
     uint16_t k, j, s;
     uint16_t N = model.u.size(); // assuming >= 1
     net.resize(N + 1);
@@ -187,7 +208,14 @@ MLP<Model, Tuple>::feedForward(
             for (s = 0; s <= n[k-1]; s ++) {
                 net[k](j) += x[k-1](s) * model.u[k-1](s, j);
             }
-            x[k](j) = logistic(net[k](j));
+            if(model.activation==RELU)
+                x[k](j) = relu(net[k](j));
+            else if(model.activation==SIGMOID)
+                x[k](j) = sigmoid(net[k](j));
+            else if(model.activation==TANH)
+                x[k](j) = tanh(net[k](j));
+            else
+                elog(WARNING,"Invalid activation");
         }
     }
 
@@ -254,7 +282,14 @@ MLP<Model, Tuple>::errorBackPropagation(
             for (t = 1; t <= n[k+1]; t ++) {
                 delta[k](j) += delta[k+1](t) * model.u[k](j, t);
             }
-            delta[k](j) = delta[k](j) * logisticDerivative(net[k](j));
+            if(model.activation==RELU)
+                delta[k](j) = delta[k](j) * reluDerivative(net[k](j));
+            else if(model.activation==SIGMOID)
+                delta[k](j) = delta[k](j) * sigmoidDerivative(net[k](j));
+            else if(model.activation==TANH)
+                delta[k](j) = delta[k](j) * tanhDerivative(net[k](j));
+            else
+                elog(WARNING,"Invalid activation");
         }
     }
 }

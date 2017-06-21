@@ -26,6 +26,7 @@ CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_transition(
         previous_state  DOUBLE PRECISION[],
         num_units       INTEGER[],
         stepsize        DOUBLE PRECISION,
+        activation      INTEGER,
         is_classification INTEGER)
 RETURNS DOUBLE PRECISION[]
 AS 'MODULE_PATHNAME'
@@ -55,12 +56,13 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
         /* previous_state */  DOUBLE PRECISION[],
         /* num_units */       INTEGER[],
         /* stepsize */        DOUBLE PRECISION,
+        /* activation */      INTEGER,
         /* is_classification */ INTEGER )(
     STYPE=DOUBLE PRECISION[],
     SFUNC=MADLIB_SCHEMA.mlp_igd_transition,
     m4_ifdef(`GREENPLUM',`prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
     FINALFUNC=MADLIB_SCHEMA.mlp_igd_final,
-    INITCOND='{0,0,0,0,0,0,0,0,0}'
+    INITCOND='{0,0,0,0,0,0,0,0,0,0}'
 );
 -------------------------------------------------------------------------
 
@@ -84,7 +86,8 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_classification(
     input_vector    VARCHAR,
     output_vector   VARCHAR,
     n_units         INTEGER[],
-    optimizer_params   VARCHAR
+    optimizer_params   VARCHAR,
+    activation      VARCHAR
 ) RETURNS VOID AS $$
     PythonFunctionBodyOnly(`convex', `mlp_igd')
     mlp_igd.mlp(
@@ -95,6 +98,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_classification(
         output_vector,
         n_units,
         optimizer_params,
+        activation,
         True
     )
 $$ LANGUAGE plpythonu VOLATILE
@@ -106,7 +110,8 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_regression(
     input_vector    VARCHAR,
     output_vector   VARCHAR,
     n_units         INTEGER[],
-    optimizer_params   VARCHAR
+    optimizer_params   VARCHAR,
+    activation      VARCHAR
 ) RETURNS VOID AS $$
     PythonFunctionBodyOnly(`convex', `mlp_igd')
     mlp_igd.mlp(
@@ -117,6 +122,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_regression(
         output_vector,
         n_units,
         optimizer_params,
+        activation,
         False
     )
 $$ LANGUAGE plpythonu VOLATILE

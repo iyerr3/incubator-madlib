@@ -630,6 +630,7 @@ public:
             + (inNumberOfStages + 1)    // numbersOfUnits: size is (N + 1)
             + 1                         // stepsize
             + 1                         // is_classification
+            + 1                         // activation
             + sizeOfModel               // model
 
             + 1                         // numRows
@@ -647,13 +648,14 @@ private:
      * - 1: numbersOfUnits (numbers of activation units, design doc: n_0,...,n_N)
      * - N + 2: stepsize (step size of gradient steps)
      * - N + 3: is_classification (do classification)
-     * - N + 4: model (coefficients, design doc: u)
+     * - N + 4 activation (do classification)
+     * - N + 5: model (coefficients, design doc: u)
      *
      * Intra-iteration components (updated in transition step):
      *   sizeOfModel = # of entries in u, (\sum_1^N n_{k-1} n_k)
-     * - N + 4 + sizeOfModel: numRows (number of rows processed in this iteration)
-     * - N + 5 + sizeOfModel: loss (loss value, the sum of squared errors)
-     * - N + 6 + sizeOfModel: incrModel (volatile model for incrementally update)
+     * - N + 5 + sizeOfModel: numRows (number of rows processed in this iteration)
+     * - N + 6 + sizeOfModel: loss (loss value, the sum of squared errors)
+     * - N + 7 + sizeOfModel: incrModel (volatile model for incrementally update)
      */
     void rebind() {
         task.numberOfStages.rebind(&mStorage[0]);
@@ -662,12 +664,13 @@ private:
             reinterpret_cast<dimension_pointer_type>(&mStorage[1]);
         task.stepsize.rebind(&mStorage[N + 2]);
         task.is_classification.rebind(&mStorage[N + 3]);
-        uint32_t sizeOfModel = task.model.rebind(&mStorage[N + 4],
+        task.activation.rebind(&mStorage[N + 4]);
+        uint32_t sizeOfModel = task.model.rebind(&mStorage[N + 5],
                 task.numberOfStages, task.numbersOfUnits);
 
-        algo.numRows.rebind(&mStorage[N + 4 + sizeOfModel]);
-        algo.loss.rebind(&mStorage[N + 5 + sizeOfModel]);
-        algo.incrModel.rebind(&mStorage[N + 6 + sizeOfModel],
+        algo.numRows.rebind(&mStorage[N + 5 + sizeOfModel]);
+        algo.loss.rebind(&mStorage[N + 6 + sizeOfModel]);
+        algo.incrModel.rebind(&mStorage[N + 7 + sizeOfModel],
                 task.numberOfStages, task.numbersOfUnits);
 
     }
@@ -685,6 +688,7 @@ public:
         dimension_pointer_type numbersOfUnits;
         numeric_type stepsize;
         dimension_type is_classification;
+        dimension_type activation;
         MLPModel<Handle> model;
     } task;
 
