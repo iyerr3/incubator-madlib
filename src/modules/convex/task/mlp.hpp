@@ -141,6 +141,8 @@ MLP<Model, Tuple>::loss(
         const model_type                    &model,
         const independent_variables_type    &y,
         const dependent_variable_type       &z) {
+    // Here we compute the loss. In the case of regression we use sum of square errors
+    // In the case of classification the loss term is cross entropy.
     std::vector<ColumnVector> net;
     std::vector<ColumnVector> x;
 
@@ -149,10 +151,17 @@ MLP<Model, Tuple>::loss(
     uint16_t j;
 
     for (j = 1; j < z.rows() + 1; j ++) {
-        double diff = x.back()(j) - z(j-1);
-        loss += diff * diff;
+        if(model.is_classification){
+            // RHS term is negative
+            loss -= z(j-1)*std::log(x.back()(j)) + (1-z(j-1))*std::log(1-x.back()(j));
+        }else{
+            double diff = x.back()(j) - z(j-1);
+            loss += diff * diff;
+        }
     }
-    loss /= 2.;
+    if(!model.is_classification){
+        loss /= 2.;
+    }
     return loss;
 }
 
@@ -181,7 +190,6 @@ MLP<Model, Tuple>::feedForward(
         std::vector<ColumnVector>           &net,
         std::vector<ColumnVector>           &x){
     // meta data and x_k^0 = 1
-    //elog(INFO,"Activation: %d",(int)model.activation);
     uint16_t k, j, s;
     uint16_t N = model.u.size(); // assuming >= 1
     net.resize(N + 1);

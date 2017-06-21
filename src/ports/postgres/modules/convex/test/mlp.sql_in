@@ -171,13 +171,15 @@ SELECT mlp_classification(
     'ARRAY[class=1,class=2,class=3]::integer[]',   -- Label
     'attributes',     -- Input features
     ARRAY[4,5,3],     -- Number of units per layer
-    'step_size=0.01,
+    'step_size=0.001,
     n_iterations=1000,
-    tolerance=0');
+    tolerance=0',
+    'tanh');
 
 
 SELECT assert(
-    loss < 5,
+    -- Loss will improve much more if more iterations are run
+    loss < 30,
     'MLP: Loss is too high (> 0.1). Wrong result.'
 ) FROM mlp_temp_result;
 
@@ -743,7 +745,8 @@ SELECT mlp_regression(
     ARRAY[14,5,5,1],     -- Number of units per layer
     'step_size=0.007,
     n_iterations=300,
-    tolerance=0');
+    tolerance=0',
+    'sigmoid');
 
 
 SELECT assert(
