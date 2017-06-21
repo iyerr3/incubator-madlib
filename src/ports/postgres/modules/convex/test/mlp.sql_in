@@ -168,8 +168,8 @@ INSERT INTO iris_data VALUES
 SELECT mlp_classification(
     'iris_data',      -- Source table
     'mlp_temp_result',    -- Desination table
-    'ARRAY[class=1,class=2,class=3]::integer[]',   -- Label
     'attributes',     -- Input features
+    'class',   -- Label
     ARRAY[4,5,3],     -- Number of units per layer
     'step_size=0.001,
     n_iterations=1000,
@@ -740,8 +740,8 @@ SELECT setseed(0);
 SELECT mlp_regression(
     'lin_housing_wi',      -- Source table
     'mlp_regress_temp_result',    -- Desination table
-    'ARRAY[y]',   -- Label
     'x',     -- Input features
+    'ARRAY[y]',   -- Label
     ARRAY[14,5,5,1],     -- Number of units per layer
     'step_size=0.007,
     n_iterations=300,

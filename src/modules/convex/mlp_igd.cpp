@@ -106,10 +106,10 @@ mlp_igd_transition::run(AnyType &args) {
     MappedColumnVector depVar;
     try {
         // an exception is raised in the backend if args[2] contains nulls
-        MappedColumnVector x = args[2].getAs<MappedColumnVector>();
+        MappedColumnVector x = args[1].getAs<MappedColumnVector>();
         // x is a const reference, we can only rebind to change its pointer
         indVar.rebind(x.memoryHandle(), x.size());
-        MappedColumnVector y = args[1].getAs<MappedColumnVector>();
+        MappedColumnVector y = args[2].getAs<MappedColumnVector>();
         depVar.rebind(y.memoryHandle(), y.size());
 
     } catch (const ArrayWithNullException &e) {

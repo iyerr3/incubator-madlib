@@ -49,7 +49,20 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         tolerance = optimizer_params["tolerance"]
         activation_name = _get_activation_function_name(activation)
         activation_index = _get_activation_index(activation_name)
-        plpy.info("Index: ",activation_index)
+        if(is_classification):
+            dependent_variable_sql = """
+            SELECT DISTINCT {dependent_varname} FROM {source_table};
+            """.format(dependent_varname=dependent_varname,
+                       source_table=source_table)
+            labels = plpy.execute(dependent_variable_sql)
+            one_hot_dependent_varname='ARRAY['
+            for x in labels:
+                label = _format_label(x[dependent_varname])
+                one_hot_dependent_varname+=dependent_varname+"="+str(label)+","
+            # Remove the last comma
+            one_hot_dependent_varname = one_hot_dependent_varname[:-1]
+            one_hot_dependent_varname+=']::integer[]'
+            dependent_varname=one_hot_dependent_varname
         while True:
             if prev_state:
                 prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
@@ -213,9 +226,11 @@ def _get_activation_function_name(activation_function):
     return activation_function
 # ------------------------------------------------------------------------------
 
-# def mlp_regression_help
-    # return ""
-    # """
 def _get_activation_index(activation_name):
     table = {"relu":0,"sigmoid":1,"tanh":2}
     return table[activation_name]
+
+def _format_label(label):
+    if type(label) is str:
+        return "'" + label + "'"
+    return label
