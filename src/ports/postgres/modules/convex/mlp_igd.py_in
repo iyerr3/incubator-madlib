@@ -49,6 +49,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         tolerance = optimizer_params["tolerance"]
         activation_name = _get_activation_function_name(activation)
         activation_index = _get_activation_index(activation_name)
+
         if(is_classification):
             dependent_variable_sql = """
             SELECT DISTINCT {dependent_varname} FROM {source_table};
@@ -63,6 +64,10 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             one_hot_dependent_varname = one_hot_dependent_varname[:-1]
             one_hot_dependent_varname+=']::integer[]'
             dependent_varname=one_hot_dependent_varname
+        if(not is_classification):
+            expr_type = get_expr_type(dependent_varname,source_table)
+            if "[]" not in expr_type:
+                dependent_varname = "ARRAY["+dependent_varname+"]"
         while True:
             if prev_state:
                 prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
@@ -151,13 +156,21 @@ def _get_optimizer_params(param_str):
 def _validate_args_classification(source_table, output_table, independent_varname,
         dependent_varname, hidden_layer_sizes,
         optimizer_params):
-    pass
+    expr_type = get_expr_type(dependent_varname,source_table)
+    int_types = ['integer', 'smallint', 'bigint']
+    text_types = ['text', 'varchar', 'character varying', 'char', 'character']
+    boolean_types = ['boolean']
+    _assert("[]" in expr_type or expr_type in int_types+text_types+boolean_types,"Dependent variable column should refer to an integer, boolean, text, varchar, or character type.")
 # ----------------------------------------------------------------------
 
 def _validate_args_regression(source_table, output_table, independent_varname,
         dependent_varname, hidden_layer_sizes,
         optimizer_params):
-    _assert("[]" in get_expr_type(dependent_varname,source_table),"Dependent variable column should refer to an array")
+    expr_type = get_expr_type(dependent_varname,source_table)
+    int_types = ['integer', 'smallint', 'bigint']
+    float_types = ['double precision','real']
+    plpy.info(expr_type)
+    _assert("[]" in expr_type or expr_type in int_types+float_types,"Dependent variable column should refer to an array or numeric type")
 # ----------------------------------------------------------------------
 
 
