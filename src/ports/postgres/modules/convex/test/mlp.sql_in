@@ -170,7 +170,7 @@ SELECT mlp_classification(
     'mlp_temp_result',    -- Desination table
     'attributes',     -- Input features
     'class',   -- Label
-    ARRAY[4,5,3],     -- Number of units per layer
+    ARRAY[5],     -- Number of units per layer
     'step_size=0.001,
     n_iterations=1000,
     tolerance=0',
@@ -742,7 +742,7 @@ SELECT mlp_regression(
     'mlp_regress_temp_result',  -- Desination table
     'x',                        -- Input features
     'y',                        -- Dependent variable
-    ARRAY[14,5,5,1],            -- Number of units per layer
+    ARRAY[5,5],            -- Number of units per layer
     'step_size=0.007,
     n_iterations=300,
     tolerance=0',

@@ -24,7 +24,7 @@ CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_transition(
         start_vec       DOUBLE PRECISION[],
         end_vec         DOUBLE PRECISION[],
         previous_state  DOUBLE PRECISION[],
-        num_units       INTEGER[],
+        layer_sizes     INTEGER[],
         stepsize        DOUBLE PRECISION,
         activation      INTEGER,
         is_classification INTEGER)
@@ -54,7 +54,7 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
         /* start_vec*/        DOUBLE PRECISION[],
         /* end_vec */         DOUBLE PRECISION[],
         /* previous_state */  DOUBLE PRECISION[],
-        /* num_units */       INTEGER[],
+        /* layer_sizes */     INTEGER[],
         /* stepsize */        DOUBLE PRECISION,
         /* activation */      INTEGER,
         /* is_classification */ INTEGER )(

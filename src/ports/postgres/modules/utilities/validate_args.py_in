@@ -458,6 +458,22 @@ def scalar_col_has_no_null(tbl, col):
 # -------------------------------------------------------------------------
 
 
+def array_col_dimension(tbl, col):
+    """
+    What is the dimension of this array column
+    """
+    if tbl is None or tbl.lower() == 'null':
+        plpy.error('Input error: Table name (NULL) is invalid')
+    if col is None or col.lower() == 'null':
+        plpy.error('Input error: Column name is invalid')
+
+    dim = plpy.execute("""
+                           SELECT max(array_upper({col}, 1)) AS dim
+                           FROM {tbl}
+                           """.format(col=col, tbl=tbl))[0]["dim"]
+    return dim
+# ------------------------------------------------------------------------
+
 def array_col_has_same_dimension(tbl, col):
     """
     Do all array elements of an array column have the same length?

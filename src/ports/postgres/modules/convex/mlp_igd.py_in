@@ -17,6 +17,9 @@ from utilities.validate_args import input_tbl_valid
 from utilities.validate_args import is_var_valid
 from utilities.validate_args import table_exists
 from utilities.validate_args import get_expr_type
+from utilities.validate_args import array_col_has_same_dimension
+from utilities.validate_args import array_col_has_no_null
+from utilities.validate_args import array_col_dimension
 from utilities.utilities import _assert
 
 
@@ -49,6 +52,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         tolerance = optimizer_params["tolerance"]
         activation_name = _get_activation_function_name(activation)
         activation_index = _get_activation_index(activation_name)
+        num_input_nodes = array_col_dimension(source_table,independent_varname)
+        num_output_nodes = 0
 
         if(is_classification):
             dependent_variable_sql = """
@@ -57,6 +62,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                        source_table=source_table)
             labels = plpy.execute(dependent_variable_sql)
             one_hot_dependent_varname='ARRAY['
+            num_output_nodes = len(labels)
             for x in labels:
                 label = _format_label(x[dependent_varname])
                 one_hot_dependent_varname+=dependent_varname+"="+str(label)+","
@@ -68,10 +74,12 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             expr_type = get_expr_type(dependent_varname,source_table)
             if "[]" not in expr_type:
                 dependent_varname = "ARRAY["+dependent_varname+"]"
+            num_output_nodes = array_col_dimension(source_table,dependent_varname)
         while True:
             if prev_state:
                 prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
             else:
+                layer_sizes = [num_input_nodes] + hidden_layer_sizes + [num_output_nodes]
                 prev_state_str = "(NULL)::DOUBLE PRECISION[]"
             train_sql = """
                 SELECT
@@ -79,7 +87,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                         ({independent_varname})::DOUBLE PRECISION[],
                         ({dependent_varname})::DOUBLE PRECISION[],
                         {prev_state},
-                        {hidden_layer_sizes},
+                        {layer_sizes},
                         ({step_size})::FLOAT8,
                         {activation},
                         {is_classification}) as curr_state
@@ -88,7 +96,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 independent_varname=independent_varname,
                 dependent_varname=dependent_varname,
                 prev_state=prev_state_str,
-                hidden_layer_sizes=py_list_to_sql_string(hidden_layer_sizes, array_type="integer"),
+                layer_sizes=py_list_to_sql_string(layer_sizes, array_type="integer"),
                 step_size=optimizer_params["step_size"],
                 source_table=source_table,
                 activation=activation_index,
@@ -169,8 +177,10 @@ def _validate_args_regression(source_table, output_table, independent_varname,
     expr_type = get_expr_type(dependent_varname,source_table)
     int_types = ['integer', 'smallint', 'bigint']
     float_types = ['double precision','real']
-    plpy.info(expr_type)
     _assert("[]" in expr_type or expr_type in int_types+float_types,"Dependent variable column should refer to an array or numeric type")
+    if("[]" in expr_type):
+        _assert(array_col_has_same_dimension(source_table,dependent_varname),"Dependent variable column should refer to arrays of the same length")
+
 # ----------------------------------------------------------------------
 
 
@@ -206,6 +216,9 @@ def _validate_args(source_table, output_table, independent_varname,
     _assert(optimizer_params["n_iterations"]>=1,"MLP error: Number of iterations should be greater than or equal to 1")
     _assert(optimizer_params["step_size"]>0,"MLP error: Stepsize should be greater than 0.")
     _assert("[]" in get_expr_type(independent_varname,source_table),"Independent variable column should refer to an array")
+    _assert(array_col_has_same_dimension(source_table,independent_varname),"Independent variable column should refer to arrays of the same length")
+    _assert(array_col_has_no_null(source_table,independent_varname),"Independent variable column should refer to arrays of the same length")
+
     if is_classification:
         _validate_args_classification(source_table, output_table, independent_varname,
         dependent_varname, hidden_layer_sizes,
