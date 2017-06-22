@@ -738,11 +738,11 @@ x[14]= x[14]/(SELECT m14 from maxs);
 
 SELECT setseed(0);
 SELECT mlp_regression(
-    'lin_housing_wi',      -- Source table
-    'mlp_regress_temp_result',    -- Desination table
-    'x',     -- Input features
-    'ARRAY[y]',   -- Label
-    ARRAY[14,5,5,1],     -- Number of units per layer
+    'lin_housing_wi',           -- Source table
+    'mlp_regress_temp_result',  -- Desination table
+    'x',                        -- Input features
+    'y',                        -- Dependent variable
+    ARRAY[14,5,5,1],            -- Number of units per layer
     'step_size=0.007,
     n_iterations=300,
     tolerance=0',
