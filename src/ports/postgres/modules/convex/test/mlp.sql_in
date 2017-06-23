@@ -698,7 +698,7 @@ COPY lin_housing_wi (x, grp_by_col, y) FROM STDIN NULL '?' DELIMITER '|';
 \.
 
 -- Normalize the columns
-WITH maxs as(
+CREATE TEMPORARY TABLE maxs as(
     SELECT
     max(x[1]) m1,
     max(x[2]) m2,
@@ -715,7 +715,7 @@ WITH maxs as(
     max(x[13]) m13,
     max(x[14]) m14
     from lin_housing_wi
-)
+);
 UPDATE lin_housing_wi
 SET
 x[1] = x[1]/(SELECT m1 from maxs),
@@ -732,6 +732,8 @@ x[11]= x[11]/(SELECT m11 from maxs),
 x[12]= x[12]/(SELECT m12 from maxs),
 x[13]= x[13]/(SELECT m13 from maxs),
 x[14]= x[14]/(SELECT m14 from maxs);
+
+DROP TABLE IF EXISTS maxs;
 
 
 -- Convergence varies for regression

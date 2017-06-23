@@ -41,8 +41,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
     """
     with MinWarning('info'):
 
-
-        optimizer_params = _get_optimizer_params(optimizer_param_str)
+        optimizer_params = _get_optimizer_params(optimizer_param_str or "")
         _validate_args(source_table, output_table, independent_varname,
         dependent_varname, hidden_layer_sizes,
         optimizer_params, is_classification)
@@ -154,7 +153,7 @@ def _get_optimizer_params(param_str):
     param_types = dict([(k, v[1]) for k, v in params_defaults.items()])
 
     if not param_str:
-        return param_defaults, param_str
+        return param_defaults
 
     name_value = extract_keyvalue_params(param_str, param_types, param_defaults,
                                          ignore_invalid=True)
@@ -209,6 +208,8 @@ def _validate_args(source_table, output_table, independent_varname,
                                        source_table=source_table))
 
 
+    _assert(hidden_layer_sizes is not None,"hidden_layer_sizes may not be null")
+    _assert(type(hidden_layer_sizes) is list,"hidden_layer_sizes must be an array of integers")
     _assert(all(type(value) is int for value in hidden_layer_sizes), "MLP error: Hidden layers sizes must be integers")
     _assert(all(value >= 0 for value in hidden_layer_sizes),"MLP error: Hidden layers sizes must be greater than 0.")
     _assert(optimizer_params["tolerance"]>=0,"MLP error: Tolerance should be greater than or equal to 0.")
