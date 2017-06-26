@@ -45,7 +45,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
     """
     with MinWarning('info'):
 
-        optimizer_params = _get_optimizer_params(optimizer_param_str)
+
+        optimizer_params = _get_optimizer_params(optimizer_param_str or "")
         _validate_args(source_table, output_table, independent_varname,
                        dependent_varname, hidden_layer_sizes,
                        optimizer_params, is_classification)
@@ -157,7 +158,7 @@ def _get_optimizer_params(param_str):
     param_types = dict([(k, v[1]) for k, v in params_defaults.items()])
 
     if not param_str:
-        return param_defaults, param_str
+        return param_defaults
 
     name_value = extract_keyvalue_params(param_str, param_types, param_defaults,
                                          ignore_invalid=True)
@@ -215,6 +216,11 @@ def _validate_args(source_table, output_table, independent_varname,
             "('{dependent_varname}') for source_table "
             "({source_table})!".format(dependent_varname=dependent_varname,
                                        source_table=source_table))
+
+    _assert(hidden_layer_sizes is not None,
+            "hidden_layer_sizes may not be null")
+    _assert(type(hidden_layer_sizes) is list,
+            "hidden_layer_sizes must be an array of integers")
     _assert(all(type(value) is int for value in hidden_layer_sizes),
             "MLP error: Hidden layers sizes must be integers")
     _assert(all(value >= 0 for value in hidden_layer_sizes),
@@ -233,6 +239,7 @@ def _validate_args(source_table, output_table, independent_varname,
             "Independent variable column should refer to arrays of the same length")
     _assert(array_col_has_no_null(source_table, independent_varname),
             "Independent variable column should refer to arrays of the same length")
+
 
     if is_classification:
         _validate_args_classification(source_table, output_table, independent_varname,
