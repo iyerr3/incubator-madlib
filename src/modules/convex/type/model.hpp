@@ -169,14 +169,14 @@ struct MLPModel {
         }
     }
 
-    uint32_t rebind(const double *data, const uint16_t &inNumberOfStages,
+    uint32_t rebind(const int is_classification, const int activation, const double *data, const uint16_t &inNumberOfStages,
                     const int32_t *inNumbersOfUnits) {
         size_t N = inNumberOfStages;
         const int32_t *n = inNumbersOfUnits;
         size_t k;
 
-        is_classification.rebind(&data[0]);
-        activation.rebind(&data[1]);
+        is_classification=is_classification;
+        activation=activation;
         uint32_t sizeOfU = 2;  // starts from 2 since is_classification is at 0 and activation is at 1
         u.clear();
         for (k = 1; k <= N; k ++) {

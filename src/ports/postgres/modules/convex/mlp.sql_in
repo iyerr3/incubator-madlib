@@ -127,3 +127,21 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_regression(
     )
 $$ LANGUAGE plpythonu VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
+
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_predict(
+    model_table      VARCHAR,
+    data_table      VARCHAR,
+    id_col_name    VARCHAR,
+    output_table      VARCHAR,
+    pred_type      VARCHAR
+) RETURNS VOID AS $$
+    PythonFunctionBodyOnly(`convex', `mlp_igd')
+    mlp_igd.mlp_predict(
+        schema_madlib,
+        model_table,
+        data_table,
+        id_col_name,
+        output_table,
+        pred_type)
+$$ LANGUAGE plpythonu VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');

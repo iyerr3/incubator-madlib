@@ -118,14 +118,14 @@ mlp_igd_transition::run(AnyType &args) {
     MLPTuple tuple;
     tuple.indVar.rebind(indVar.memoryHandle(), indVar.size());
     tuple.depVar.rebind(depVar.memoryHandle(), depVar.size());
-    if (tuple.indVar.size() != n[0]){
-        throw std::runtime_error("Invalid parameter: input or output vector "
-                "does not have the correct numbers of elements");
-    }
-    if (tuple.depVar.size() != n[N]) {
-        throw std::runtime_error("Invalid parameter: input or output vector "
-                "does not have the correct numbers of elements");
-    }
+    //if (tuple.indVar.size() != n[0]){
+        //throw std::runtime_error("Invalid parameter: input or output vector "
+                //"does not have the correct numbers of elements");
+    //}
+    //if (tuple.depVar.size() != n[N]) {
+        //throw std::runtime_error("Invalid parameter: input or output vector "
+                //"does not have the correct numbers of elements");
+    //}
 
     // Now do the transition step
     MLPIGDAlgorithm::transition(state, tuple);
@@ -199,7 +199,7 @@ internal_mlp_igd_result::run(AnyType &args) {
 
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap
         flattenU;
-    flattenU.rebind(&state.task.model.u[0](0, 0),
+    flattenU.rebind(&state.task.model.is_classification,&state.task.model.activation,&state.task.model.u[0](0, 0),
             state.task.model.arraySize(state.task.numberOfStages,
                     state.task.numbersOfUnits));
     double loss = state.algo.loss;
@@ -209,7 +209,46 @@ internal_mlp_igd_result::run(AnyType &args) {
     return tuple;
 }
 
-} // namespace convex
+
+
+AnyType internal_mlp_predict::run (AnyType& args)
+{
+    // returns NULL if the feature has NULL values
+    try {
+        args[0].getAs<MappedColumnVector>();
+    } catch(const ArrayWithNullException &e) {
+        return Null();
+    }
+
+    MappedColumnVector y = args[0].getAs<MappedColumnVector>();
+    MappedColumnVector x_N;
+    predict(model, y, x_N);
+}
+
+AnyType
+mlp_predict_transition::run(AnyType &args) {
+    MLPPredictState<MutableArrayHandle<double> > state = args[0];
+
+    if (state.algo.numRows == 0) {
+        MappedColumnVector coeff = args[1].getAs<MappedColumnVector>();
+        MappedColumnVector layerSizes = args[2].getAs<MappedColumnVector>();
+        size_t numberOfStages = numberOfStages.size();
+
+        MLPModel model;
+        model.rebind(is_classification,activation,coeff[0],numberOfStages,layerSizes[0])
+    }
+
+    MappedColumnVector indVar;
+    try {
+        // an exception is raised in the backend if args[2] contains nulls
+        MappedColumnVector x = args[1].getAs<MappedColumnVector>();
+        // x is a const reference, we can only rebind to change its pointer
+        indVar.rebind(x.memoryHandle(), x.size());
+    } catch (const ArrayWithNullException &e) {
+        return args[0];
+    }
+
+}
 
 } // namespace modules
 

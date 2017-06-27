@@ -16,6 +16,7 @@ from utilities.utilities import extract_keyvalue_params
 from utilities.utilities import _assert
 from utilities.utilities import unique_string
 from utilities.utilities import split_quoted_delimited_str
+from utilities.utilities import strip_end_quotes
 
 from utilities.validate_args import cols_in_tbl_valid
 from utilities.validate_args import input_tbl_valid
@@ -51,13 +52,19 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                        dependent_varname, hidden_layer_sizes,
                        optimizer_params, is_classification)
 
-        n_iterations = 1
+        current_iteration = 1
         prev_state = None
         tolerance = optimizer_params["tolerance"]
+        n_iterations = optimizer_params["n_iterations"]
+        step_size = optimizer_params["step_size"]
+        n_tries = optimizer_params["n_tries"]
         activation_name = _get_activation_function_name(activation)
         activation_index = _get_activation_index(activation_name)
         num_input_nodes = array_col_dimension(source_table, independent_varname)
         num_output_nodes = 0
+        classes = []
+        dependent_type = get_expr_type(dependent_varname, source_table)
+        original_dependent_varname = dependent_varname
 
         if(is_classification):
             dependent_variable_sql = """
@@ -69,21 +76,21 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             num_output_nodes = len(labels)
             for x in labels:
                 label = _format_label(x[dependent_varname])
+                classes.append(label)
                 one_hot_dependent_varname += dependent_varname + "=" + str(label) + ","
             # Remove the last comma
             one_hot_dependent_varname = one_hot_dependent_varname[:-1]
             one_hot_dependent_varname += ']::integer[]'
             dependent_varname = one_hot_dependent_varname
         if(not is_classification):
-            expr_type = get_expr_type(dependent_varname, source_table)
-            if "[]" not in expr_type:
+            if "[]" not in dependent_type:
                 dependent_varname = "ARRAY[" + dependent_varname + "]"
             num_output_nodes = array_col_dimension(source_table, dependent_varname)
+        layer_sizes = [num_input_nodes] + hidden_layer_sizes + [num_output_nodes]
         while True:
             if prev_state:
                 prev_state_str = py_list_to_sql_string(prev_state, array_type="double precision")
             else:
-                layer_sizes = [num_input_nodes] + hidden_layer_sizes + [num_output_nodes]
                 prev_state_str = "(NULL)::DOUBLE PRECISION[]"
             train_sql = """
                 SELECT
@@ -101,7 +108,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 dependent_varname=dependent_varname,
                 prev_state=prev_state_str,
                 layer_sizes=py_list_to_sql_string(layer_sizes, array_type="integer"),
-                step_size=optimizer_params["step_size"],
+                step_size=step_size,
                 source_table=source_table,
                 activation=activation_index,
                 is_classification=int(is_classification))
@@ -116,15 +123,45 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                            tolerance=tolerance)
             state_dist = plpy.execute(dist_sql)[0]["state_dist"]
             if ((state_dist and state_dist < tolerance) or
-                    n_iterations > optimizer_params["n_iterations"]):
+                    current_iteration > n_iterations):
                 break
             prev_state = curr_state
-            n_iterations += 1
-        _build_output_tables(schema_madlib, output_table, curr_state, n_iterations)
+            current_iteration += 1
+        _build_model_table(schema_madlib, output_table, curr_state, n_iterations)
+        layer_sizes_str=py_list_to_sql_string(layer_sizes, array_type="integer")
+        classes_str=py_list_to_sql_string([strip_end_quotes(cl,"'") for cl in classes], array_type=dependent_type)
+        # TODO validation for summary
+        summary_table_query = """
+            CREATE TABLE {output_table}_summary
+            (independent_varname TEXT,
+            dependent_varname TEXT,
+            tolerance FLOAT,
+            step_size FLOAT,
+            n_iterations INTEGER,
+            n_tries INTEGER,
+            layer_sizes INTEGER[],
+            activation_function TEXT,
+            is_classification BOOLEAN,
+            classes {dependent_type}[]
+            );
+            INSERT INTO {output_table}_summary VALUES
+            ('{independent_varname}',
+            '{original_dependent_varname}',
+            {tolerance},
+            {step_size},
+            {n_iterations},
+            {n_tries},
+            {layer_sizes_str},
+            '{activation_name}',
+            {is_classification},
+            {classes_str}
+            )
+            """.format(**locals())
+        plpy.execute(summary_table_query)
 # ----------------------------------------------------------------------
 
 
-def _build_output_tables(schema_madlib, output_table, final_state, n_iterations):
+def _build_model_table(schema_madlib, output_table, final_state, n_iterations):
     final_state_str = py_list_to_sql_string(final_state, array_type="double precision")
 
     model_table_query = """
@@ -237,8 +274,8 @@ def _validate_args(source_table, output_table, independent_varname,
             "Independent variable column should refer to an array")
     _assert(array_col_has_same_dimension(source_table, independent_varname),
             "Independent variable column should refer to arrays of the same length")
-    _assert(array_col_has_no_null(source_table, independent_varname),
-            "Independent variable column should refer to arrays of the same length")
+    # _assert(array_col_has_no_null(source_table, independent_varname),
+            # "Independent variable column should refer to arrays of the same length")
 
 
     if is_classification:
@@ -481,23 +518,25 @@ def mlp_predict(schema_madlib, model_table, data_table,
     """
     # model table
     input_tbl_valid(model_table, 'MLP')
-    cols_in_tbl_valid(model_table, ['coef'], 'MLP')
+    cols_in_tbl_valid(model_table, ['coeff'], 'MLP')
     # summary table
     summary_table = add_postfix(model_table, "_summary")
     input_tbl_valid(summary_table, 'MLP')
     cols_in_tbl_valid(summary_table,
                       ['dependent_varname', 'independent_varname',
                        'activation_function',
-                       'optimizer_params'],
+                       'tolerance', 'step_size','n_iterations',
+                       'n_tries','classes', 'layer_sizes'],
                       'MLP')
 
+# TODO validation for summary
     # read necessary info from summary
     summary = plpy.execute("SELECT * FROM {0}".format(summary_table))[0]
-    method = summary['method']
     dependent_varname = summary['dependent_varname']
     independent_varname = summary['independent_varname']
     activation_function = summary['activation_function']
-    optimizer_params = summary['optimizer_params']
+    layer_sizes = summary['layer_sizes']
+    # optimizer_params = summary['optimizer_params']
     is_classification = summary["is_classification"]
 
     pred_name = ('"prob_{0}"' if pred_type == "prob" else
@@ -513,18 +552,22 @@ def mlp_predict(schema_madlib, model_table, data_table,
             "MLP Error: id_col_name ('{0}') is invalid for {1}".
             format(id_col_name, data_table))
     output_tbl_valid(output_table, 'MLP')
-    optimizer_param_dict = _get_optimizer_params(optimizer_params)
+    # optimizer_param_dict = _get_optimizer_params(optimizer_params)
 
     with MinWarning("warning"):
         header = "CREATE TABLE " + output_table + " AS "
+        # Regression
         if not is_classification:
             sql = header + """
                 SELECT {id_col_name},
                        {schema_madlib}._predict_mlp_response(
                             model,
-                            {independent_varname}::DOUBLE PRECISION[]
+                            {independent_varname}::DOUBLE PRECISION[],
+                            is_classification,
+                            activation_function,
+                            layer_sizes
                         ) as {pred_name}
-                FROM {source} as s {join_str} {model} as m {using_str}
+                FROM {data_table} as s {join_str} {model} as m {using_str}
                 """
         else:
             # if dep_type.lower() == "boolean":
@@ -542,19 +585,28 @@ def mlp_predict(schema_madlib, model_table, data_table,
                              SELECT
                                 {id_col_name},
                                 {schema_madlib}._predict_mlp_response(
-                                       model,
-                                       {independent_varname}::DOUBLE PRECISION[])::TEXT
+                                        model,
+                                        {dependent_varname}::DOUBLE PRECISION[],
+                                        is_classification,
+                                        activation_function,
+                                        layer_sizes)::TEXT[]
                                as {pred_name}
-                            FROM {source} as s {join_str} {model} as m {using_str}
+                            FROM {data_table} as s {join_str} {model} as m {using_str}
                         ) q
                     """
             else:
                 # Incomplete
+                summary_query = """
+                SELECT classes FROM {0}_summary
+                """.format(model_table)
+                classes = plpy.execute(summary_query)[0]['classes']
+                plpy.info(classes)
                 intermediate_col = unique_string()
-                score_format = ', \n'.join([
+                score_format = ',\n'.join([
                     '{interim}[{j}] as "estimated_prob_{c}"'.
                     format(j=i + 1, c=c.strip(' "'), interim=intermediate_col)
-                    for i, c in enumerate(split_quoted_delimited_str(dep_levels))])
+                        for i, c in enumerate(classes)])
+                plpy.info(score_format)
                 sql = header + """
                     SELECT
                         {id_col_name},
@@ -563,9 +615,13 @@ def mlp_predict(schema_madlib, model_table, data_table,
                             SELECT {id_col_name},
                                    {schema_madlib}._predict_mlp_prob(
                                        model,
-                                       {independent_varname}::DOUBLE PRECISION[])::TEXT
+                                       {independent_varname}::DOUBLE PRECISION[],
+                                       is_classification,
+                                       activation_function,
+                                       layer_sizes
+                                       )::TEXT
                                             AS {intermediate_col}
-                            FROM {source} as s {join_str} {model} as m {using_str}
+                            FROM {data_table} as s {join_str} {model} as m {using_str}
                         ) q
                     """
     sql = sql.format(**locals())
