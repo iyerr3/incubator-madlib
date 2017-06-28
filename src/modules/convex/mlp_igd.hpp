@@ -33,6 +33,12 @@ DECLARE_UDF(convex, internal_mlp_igd_result)
 
 /**
  * @brief Multi-layer perceptron (incremental gradient): Predict
- *      transition function
+ *      function for regression and classification probability
  */
-DECLARE_UDF(convex, _predict_mlp_response)
+
+DECLARE_UDF(convex, _predict_mlp_output)
+/**
+ * @brief Multi-layer perceptron (incremental gradient): Predict
+ *       function for classification class
+ */
+DECLARE_UDF(convex, _predict_mlp_class)

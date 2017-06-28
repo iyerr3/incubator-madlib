@@ -146,8 +146,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.mlp_predict(
 $$ LANGUAGE plpythonu VOLATILE
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
 
-
-CREATE FUNCTION MADLIB_SCHEMA._predict_mlp_response(
+CREATE FUNCTION MADLIB_SCHEMA._predict_mlp_output(
         coeff DOUBLE PRECISION[],
         independent_varname DOUBLE PRECISION[],
         is_classification DOUBLE PRECISION,
@@ -157,3 +156,15 @@ CREATE FUNCTION MADLIB_SCHEMA._predict_mlp_response(
 RETURNS DOUBLE PRECISION[]
 AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION MADLIB_SCHEMA._predict_mlp_class(
+        coeff DOUBLE PRECISION[],
+        independent_varname DOUBLE PRECISION[],
+        is_classification DOUBLE PRECISION,
+        activation_function DOUBLE PRECISION,
+        layer_sizes INTEGER[]
+    )
+RETURNS INTEGER
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+

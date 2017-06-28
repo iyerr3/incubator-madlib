@@ -41,6 +41,10 @@ public:
             const independent_variables_type    &y,
             const dependent_variable_type       &z);
 
+    static int predictClass(
+            const model_type                    &model,
+            const independent_variables_type    &y);
+
     static ColumnVector predict(
             const model_type                    &model,
             const independent_variables_type    &y);
@@ -172,17 +176,31 @@ template <class Model, class Tuple>
 ColumnVector
 MLP<Model, Tuple>::predict(
         const model_type                    &model,
-        const independent_variables_type    &y
-        ) {
+        const independent_variables_type    &y) {
     (void) model;
     (void) y;
     std::vector<ColumnVector> net;
     std::vector<ColumnVector> x;
 
+    feedForward(model, y, net, x);
+    return x.back().tail(x.back().size()-1);
+}
+
+template <class Model, class Tuple>
+int
+MLP<Model, Tuple>::predictClass(
+        const model_type                    &model,
+        const independent_variables_type    &y) {
+    (void) model;
+    (void) y;
+    std::vector<ColumnVector> net;
+    std::vector<ColumnVector> x;
 
     feedForward(model, y, net, x);
-    // Don't return the offset
-    return x.back().tail(x.back().size()-1);
+    ColumnVector output = x.back().tail(x.back().size()-1);
+    int max_idx;
+    output.maxCoeff(&max_idx);
+    return max_idx;
 }
 
 template <class Model, class Tuple>
