@@ -10,6 +10,8 @@
 #ifndef MADLIB_MODULES_CONVEX_TASK_MLP_HPP_
 #define MADLIB_MODULES_CONVEX_TASK_MLP_HPP_
 
+//#include "modules/convex/task/mlp_utils.cpp"
+
 namespace madlib {
 
 namespace modules {
@@ -39,12 +41,10 @@ public:
             const independent_variables_type    &y,
             const dependent_variable_type       &z);
 
-    static void predict(
+    static ColumnVector predict(
             const model_type                    &model,
-            const independent_variables_type    &y,
-            dependent_variable_type             &x_N);
+            const independent_variables_type    &y);
 
-private:
     const static int RELU = 0;
     const static int SIGMOID = 1;
     const static int TANH = 2;
@@ -53,21 +53,24 @@ private:
         return 1. / (1. + std::exp(-xi));
     }
 
+    static double relu(const double &xi) {
+        return xi*(xi>0);
+    }
+
+    static double tanh(const double &xi) {
+        return std::tanh(xi);
+    }
+
+
+private:
+
     static double sigmoidDerivative(const double &xi) {
         double value = sigmoid(xi);
         return value * (1. - value);
     }
 
-    static double relu(const double &xi) {
-        return xi*(xi>0);
-    }
-
     static double reluDerivative(const double &xi) {
         return xi>0;
-    }
-
-    static double tanh(const double &xi) {
-        return std::tanh(xi);
     }
 
     static double tanhDerivative(const double &xi) {
@@ -166,19 +169,18 @@ MLP<Model, Tuple>::loss(
 }
 
 template <class Model, class Tuple>
-void
+ColumnVector
 MLP<Model, Tuple>::predict(
         const model_type                    &model,
-        const independent_variables_type    &y,
-        dependent_variable_type             &x_N) {
+        const independent_variables_type    &y
+        ) {
     (void) model;
     (void) y;
-    (void) x_N;
     std::vector<ColumnVector> net;
     std::vector<ColumnVector> x;
 
     feedForward(model, y, net, x);
-    x_N = x.back();
+    return x.back();
 }
 
 template <class Model, class Tuple>
@@ -241,6 +243,8 @@ MLP<Model, Tuple>::feedForward(
         last_x = (last_x.array() - max_x).exp();
         last_x /= last_x.sum();
     }
+    //elog(INFO,"%d",(int)N);
+    //elog(INFO,"%f",x[N](1));
     x[N].tail(n[N]) = last_x;
 }
 

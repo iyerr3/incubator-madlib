@@ -169,15 +169,18 @@ struct MLPModel {
         }
     }
 
-    uint32_t rebind(const int is_classification, const int activation, const double *data, const uint16_t &inNumberOfStages,
+    uint32_t rebind(const double *is_classification_in, const double *activation_in, const double *data, const uint16_t &inNumberOfStages,
                     const int32_t *inNumbersOfUnits) {
         size_t N = inNumberOfStages;
         const int32_t *n = inNumbersOfUnits;
         size_t k;
 
-        is_classification=is_classification;
-        activation=activation;
-        uint32_t sizeOfU = 2;  // starts from 2 since is_classification is at 0 and activation is at 1
+        is_classification.rebind(is_classification_in);
+        activation.rebind(activation_in);
+        //is_classification = is_classification_in;
+        //activation = activation_in;
+        //#TODO check rebind
+        uint32_t sizeOfU = 0;  // starts from 2 since is_classification is at 0 and activation is at 1
         u.clear();
         for (k = 1; k <= N; k ++) {
             u.push_back(Eigen::Map<Matrix >(

@@ -663,14 +663,12 @@ private:
         task.numbersOfUnits =
             reinterpret_cast<dimension_pointer_type>(&mStorage[1]);
         task.stepsize.rebind(&mStorage[N + 2]);
-        task.is_classification.rebind(&mStorage[N + 3]);
-        task.activation.rebind(&mStorage[N + 4]);
-        uint32_t sizeOfModel = task.model.rebind(&mStorage[N + 5],
+        uint32_t sizeOfModel = task.model.rebind(&mStorage[N + 3],&mStorage[N + 4],&mStorage[N + 5],
                 task.numberOfStages, task.numbersOfUnits);
 
         algo.numRows.rebind(&mStorage[N + 5 + sizeOfModel]);
         algo.loss.rebind(&mStorage[N + 6 + sizeOfModel]);
-        algo.incrModel.rebind(&mStorage[N + 7 + sizeOfModel],
+        algo.incrModel.rebind(&mStorage[N + 3],&mStorage[N+4],&mStorage[N + 7 + sizeOfModel],
                 task.numberOfStages, task.numbersOfUnits);
 
     }

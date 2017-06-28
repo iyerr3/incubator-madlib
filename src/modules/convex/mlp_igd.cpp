@@ -5,6 +5,7 @@
  * @brief Low-rank Matrix Factorization functions
  *
  *//* ----------------------------------------------------------------------- */
+#include <boost/lexical_cast.hpp>
 
 #include <dbconnector/dbconnector.hpp>
 #include <modules/shared/HandleTraits.hpp>
@@ -31,6 +32,8 @@ typedef IGD<MLPIGDState<MutableArrayHandle<double> >, MLPIGDState<ArrayHandle<do
 
 typedef Loss<MLPIGDState<MutableArrayHandle<double> >, MLPIGDState<ArrayHandle<double> >,
         MLP<MLPModel<MutableArrayHandle<double> >, MLPTuple > > MLPLossAlgorithm;
+
+typedef MLP<MLPModel<MutableArrayHandle<double> >,MLPTuple> MLPTask;
 
 /**
  * @brief Perform the multi-layer perceptron transition step
@@ -199,9 +202,9 @@ internal_mlp_igd_result::run(AnyType &args) {
 
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap
         flattenU;
-    flattenU.rebind(&state.task.model.is_classification,&state.task.model.activation,&state.task.model.u[0](0, 0),
+    flattenU.rebind(&state.task.model.u[0](0, 0),
             state.task.model.arraySize(state.task.numberOfStages,
-                    state.task.numbersOfUnits));
+                    state.task.numbersOfUnits)-2); // -2 for is_classification and activation
     double loss = state.algo.loss;
 
     AnyType tuple;
@@ -210,33 +213,20 @@ internal_mlp_igd_result::run(AnyType &args) {
 }
 
 
-
-AnyType internal_mlp_predict::run (AnyType& args)
-{
-    // returns NULL if the feature has NULL values
-    try {
-        args[0].getAs<MappedColumnVector>();
-    } catch(const ArrayWithNullException &e) {
-        return Null();
-    }
-
-    MappedColumnVector y = args[0].getAs<MappedColumnVector>();
-    MappedColumnVector x_N;
-    predict(model, y, x_N);
-}
-
 AnyType
-mlp_predict_transition::run(AnyType &args) {
-    MLPPredictState<MutableArrayHandle<double> > state = args[0];
+_predict_mlp_response::run(AnyType &args) {
+    MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
+    MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
+    size_t numberOfStages = layerSizes.size();
+//#TODO this should be an int not a double
+    double is_classification = args[2].getAs<double>();
+    double activation = args[3].getAs<double>();
 
-    if (state.algo.numRows == 0) {
-        MappedColumnVector coeff = args[1].getAs<MappedColumnVector>();
-        MappedColumnVector layerSizes = args[2].getAs<MappedColumnVector>();
-        size_t numberOfStages = numberOfStages.size();
-
-        MLPModel model;
-        model.rebind(is_classification,activation,coeff[0],numberOfStages,layerSizes[0])
-    }
+    MLPModel<MutableArrayHandle<double> > model;
+    model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+    elog(INFO,"Is classification: %d",(int)model.is_classification);
+    elog(INFO,"Activation: %d",(int)model.activation);
+    elog(INFO,"Weight 0: %f",model.u[0](3,3));
 
     MappedColumnVector indVar;
     try {
@@ -247,8 +237,12 @@ mlp_predict_transition::run(AnyType &args) {
     } catch (const ArrayWithNullException &e) {
         return args[0];
     }
+    ColumnVector prediction = MLPTask::predict(model, indVar);
+    return prediction;
 
 }
+
+} // namespace convex
 
 } // namespace modules
 

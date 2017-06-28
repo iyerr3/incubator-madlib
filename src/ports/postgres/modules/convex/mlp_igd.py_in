@@ -163,6 +163,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
 
 def _build_model_table(schema_madlib, output_table, final_state, n_iterations):
     final_state_str = py_list_to_sql_string(final_state, array_type="double precision")
+    plpy.info(final_state_str)
 
     model_table_query = """
         CREATE TABLE {output_table} AS
@@ -517,6 +518,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                   For regression, only type='response' is defined.
     """
     # model table
+#TODO check if summary table exists
     input_tbl_valid(model_table, 'MLP')
     cols_in_tbl_valid(model_table, ['coeff'], 'MLP')
     # summary table
@@ -532,12 +534,14 @@ def mlp_predict(schema_madlib, model_table, data_table,
 # TODO validation for summary
     # read necessary info from summary
     summary = plpy.execute("SELECT * FROM {0}".format(summary_table))[0]
+    coeff = py_list_to_sql_string(plpy.execute("SELECT * FROM {0}".format(model_table))[0]["coeff"])
     dependent_varname = summary['dependent_varname']
     independent_varname = summary['independent_varname']
-    activation_function = summary['activation_function']
-    layer_sizes = summary['layer_sizes']
+    activation_function = _get_activation_index(summary['activation_function'])
+    layer_sizes = py_list_to_sql_string(summary['layer_sizes'],array_type="INTEGER")
+    # coeff = py_list_to_sql_string(summary['coeff'],array_type="double precision")
     # optimizer_params = summary['optimizer_params']
-    is_classification = summary["is_classification"]
+    is_classification = int(summary["is_classification"])
 
     pred_name = ('"prob_{0}"' if pred_type == "prob" else
                  '"estimated_{0}"').format(dependent_varname.replace('"', '').strip())
@@ -561,13 +565,13 @@ def mlp_predict(schema_madlib, model_table, data_table,
             sql = header + """
                 SELECT {id_col_name},
                        {schema_madlib}._predict_mlp_response(
-                            model,
+                            {coeff},
                             {independent_varname}::DOUBLE PRECISION[],
-                            is_classification,
-                            activation_function,
-                            layer_sizes
+                            {is_classification},
+                            {activation_function},
+                            {layer_sizes}
                         ) as {pred_name}
-                FROM {data_table} as s {join_str} {model} as m {using_str}
+                FROM {data_table}
                 """
         else:
             # if dep_type.lower() == "boolean":
@@ -585,8 +589,8 @@ def mlp_predict(schema_madlib, model_table, data_table,
                              SELECT
                                 {id_col_name},
                                 {schema_madlib}._predict_mlp_response(
-                                        model,
-                                        {dependent_varname}::DOUBLE PRECISION[],
+                                        {coeff}::DOUBLE PRECISION[],
+                                        {independent_varname}::DOUBLE PRECISION[],
                                         is_classification,
                                         activation_function,
                                         layer_sizes)::TEXT[]
@@ -614,7 +618,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         FROM (
                             SELECT {id_col_name},
                                    {schema_madlib}._predict_mlp_prob(
-                                       model,
+                                       {coeff}::DOUBLE PRECISION[],
                                        {independent_varname}::DOUBLE PRECISION[],
                                        is_classification,
                                        activation_function,
@@ -625,6 +629,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         ) q
                     """
     sql = sql.format(**locals())
+    plpy.info(sql)
     with MinWarning('warning'):
         plpy.execute(sql)
 
