@@ -155,7 +155,7 @@ MLP<Model, Tuple>::loss(
 
     for (j = 1; j < z.rows() + 1; j ++) {
         if(model.is_classification){
-            // RHS term is negative
+            // Cross entropy: RHS term is negative
             loss -= z(j-1)*std::log(x.back()(j)) + (1-z(j-1))*std::log(1-x.back()(j));
         }else{
             double diff = x.back()(j) - z(j-1);
@@ -179,8 +179,10 @@ MLP<Model, Tuple>::predict(
     std::vector<ColumnVector> net;
     std::vector<ColumnVector> x;
 
+
     feedForward(model, y, net, x);
-    return x.back();
+    // Don't return the offset
+    return x.back().tail(x.back().size()-1);
 }
 
 template <class Model, class Tuple>
@@ -243,8 +245,6 @@ MLP<Model, Tuple>::feedForward(
         last_x = (last_x.array() - max_x).exp();
         last_x /= last_x.sum();
     }
-    //elog(INFO,"%d",(int)N);
-    //elog(INFO,"%f",x[N](1));
     x[N].tail(n[N]) = last_x;
 }
 

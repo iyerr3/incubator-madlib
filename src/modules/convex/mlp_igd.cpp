@@ -207,6 +207,12 @@ internal_mlp_igd_result::run(AnyType &args) {
                     state.task.numbersOfUnits)-2); // -2 for is_classification and activation
     double loss = state.algo.loss;
 
+    std::stringstream debug;
+    debug << state.task.model.u[0];
+    debug << std::endl;
+    debug << state.task.model.u[1];
+    elog(INFO, "Weights\n%s", debug.str().c_str());
+
     AnyType tuple;
     tuple << flattenU << loss;
     return tuple;
@@ -217,16 +223,17 @@ AnyType
 _predict_mlp_response::run(AnyType &args) {
     MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
     MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
-    size_t numberOfStages = layerSizes.size();
+    // Input layer doesn't count
+    size_t numberOfStages = layerSizes.size()-1;
 //#TODO this should be an int not a double
     double is_classification = args[2].getAs<double>();
     double activation = args[3].getAs<double>();
 
     MLPModel<MutableArrayHandle<double> > model;
     model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
-    elog(INFO,"Is classification: %d",(int)model.is_classification);
-    elog(INFO,"Activation: %d",(int)model.activation);
-    elog(INFO,"Weight 0: %f",model.u[0](3,3));
+    //elog(INFO,"Is classification: %d",(int)model.is_classification);
+    //elog(INFO,"Activation: %d",(int)model.activation);
+    //elog(INFO,"Weight 0: %f",model.u[0](3,3));
 
     MappedColumnVector indVar;
     try {
@@ -237,6 +244,16 @@ _predict_mlp_response::run(AnyType &args) {
     } catch (const ArrayWithNullException &e) {
         return args[0];
     }
+
+    std::stringstream debug;
+    debug << "0: "<<model.u[0];
+    debug << std::endl;
+    debug << "1: "<<model.u[1];
+    debug << std::endl;
+    //debug << "2: "<<model.u[2];
+    //debug << std::endl;
+    debug << "size: "<<model.u.size();
+    elog(INFO, "Predict Weights\n%s", debug.str().c_str());
     ColumnVector prediction = MLPTask::predict(model, indVar);
     return prediction;
 
