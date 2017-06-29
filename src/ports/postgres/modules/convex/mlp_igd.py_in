@@ -132,7 +132,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         layer_sizes_str=py_list_to_sql_string(layer_sizes, array_type="integer")
         classes_str=py_list_to_sql_string([strip_end_quotes(cl,"'") for cl in classes], array_type=dependent_type)
         # TODO validation for summary
-        summary_table_query = """
+        summary_table_creation_query = """
             CREATE TABLE {output_table}_summary
             (independent_varname TEXT,
             dependent_varname TEXT,
@@ -144,7 +144,9 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             activation_function TEXT,
             is_classification BOOLEAN,
             classes {dependent_type}[]
-            );
+            );""".format(**locals())
+
+        summary_table_update_query = """
             INSERT INTO {output_table}_summary VALUES
             ('{independent_varname}',
             '{original_dependent_varname}',
@@ -156,9 +158,10 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             '{activation_name}',
             {is_classification},
             {classes_str}
-            )
+            );
             """.format(**locals())
-        plpy.execute(summary_table_query)
+        plpy.execute(summary_table_creation_query)
+        plpy.execute(summary_table_update_query)
 # ----------------------------------------------------------------------
 
 
@@ -243,6 +246,7 @@ def _validate_args(source_table, output_table, independent_varname,
     """
     input_tbl_valid(source_table, "MLP")
     output_tbl_valid(output_table, "MLP")
+    output_tbl_valid(output_table+"_summary", "MLP")
     _assert(is_var_valid(source_table, independent_varname),
             "MLP error: invalid independent_varname "
             "('{independent_varname}') for source_table "
@@ -347,7 +351,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
     cols_in_tbl_valid(model_table, ['coeff'], 'MLP')
     # summary table
     summary_table = add_postfix(model_table, "_summary")
-    output_tbl_valid(summary_table, 'MLP')
+    input_tbl_valid(summary_table, 'MLP')
     cols_in_tbl_valid(summary_table,
                       ['dependent_varname', 'independent_varname',
                        'activation_function',
@@ -388,7 +392,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
         if not is_classification:
             sql = header + """
                 SELECT {id_col_name},
-                       {schema_madlib}._predict_mlp_output(
+                       {schema_madlib}.internal_predict_mlp_output(
                             {coeff},
                             {independent_varname}::DOUBLE PRECISION[],
                             {is_classification},
@@ -424,7 +428,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         FROM (
                              SELECT
                                 {id_col_name},
-                                {schema_madlib}._predict_mlp_class(
+                                {schema_madlib}.internal_predict_mlp_class(
                                         {coeff}::DOUBLE PRECISION[],
                                         {independent_varname}::DOUBLE PRECISION[],
                                         {is_classification},
@@ -444,7 +448,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         FROM (
                              SELECT
                                 {id_col_name},
-                                {schema_madlib}._predict_mlp_class(
+                                {schema_madlib}.internal_predict_mlp_class(
                                         {coeff}::DOUBLE PRECISION[],
                                         {independent_varname}::DOUBLE PRECISION[],
                                         {is_classification},
