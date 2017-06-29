@@ -178,7 +178,7 @@ mlp_igd_final::run(AnyType &args) {
 
     // for stepsize tuning
     std::stringstream debug;
-    debug << "loss: " << state.algo.loss << std::endl;
+    debug << "loss: " << state.algo.loss;
     warning(debug.str());
     return state;
 }

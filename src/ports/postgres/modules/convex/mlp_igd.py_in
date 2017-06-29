@@ -126,6 +126,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                     current_iteration > n_iterations):
                 break
             prev_state = curr_state
+            plpy.info("Iteration: "+str(current_iteration)+"/"+str(n_iterations))
             current_iteration += 1
         _build_model_table(schema_madlib, output_table, curr_state, n_iterations)
         layer_sizes_str=py_list_to_sql_string(layer_sizes, array_type="integer")
@@ -618,7 +619,6 @@ def mlp_predict(schema_madlib, model_table, data_table,
                     '{interim}[{j}] as "estimated_prob_{c}"'.
                     format(j=i + 1, c=c.strip(' "'), interim=intermediate_col)
                         for i, c in enumerate(classes)])
-                plpy.info(score_format)
                 sql = header + """
                     SELECT
                         {id_col_name},
@@ -639,7 +639,6 @@ def mlp_predict(schema_madlib, model_table, data_table,
 #TODO add join for validation
 #  as s {join_str} {model} as m {using_str}
     sql = sql.format(**locals())
-    plpy.info(sql)
     with MinWarning('warning'):
         plpy.execute(sql)
 
