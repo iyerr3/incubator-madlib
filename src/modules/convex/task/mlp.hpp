@@ -280,7 +280,6 @@ MLP<Model, Tuple>::endLayerDeltaError(
     delta_N.resize(n_N + 1);
 
     for (t = 1; t <= n_N; t ++) {
-        // #TODO in the case of classification do not need derivative
 		delta_N(t) = (x[N](t) - z(t-1));
     }
 }
@@ -297,7 +296,6 @@ MLP<Model, Tuple>::errorBackPropagation(
     uint16_t N = model.u.size(); // assuming >= 1
     delta.resize(N + 1);
 
-    // #TODO custom iterator for weights
     std::vector<uint16_t> n; n.clear();
     n.push_back(model.u[0].rows() - 1);
     for (k = 1; k <= N; k ++) {

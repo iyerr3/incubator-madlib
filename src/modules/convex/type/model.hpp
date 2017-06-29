@@ -156,7 +156,6 @@ struct MLPModel {
 
         for (k=1; k <= N; k++){
             for (s=0; s <= n[k-1]; s++){
-                // #TODO is this the input layer? Should it have weight 1?
                 u[k-1](s,0)=1;
                 for (j=1; j <= n[k]; j++){
                     // Generate normal(0,epsilon) value using Box-Muller transform
@@ -179,7 +178,6 @@ struct MLPModel {
         activation.rebind(activation_in);
         //is_classification = is_classification_in;
         //activation = activation_in;
-        //#TODO check rebind
         uint32_t sizeOfU = 0;  // starts from 2 since is_classification is at 0 and activation is at 1
         u.clear();
         for (k = 1; k <= N; k ++) {

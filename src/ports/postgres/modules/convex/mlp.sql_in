@@ -10,6 +10,669 @@
 
 m4_include(`SQLCommon.m4')
 
+/**
+@addtogroup grp_neural_nets
+
+<div class="toc"><b>Contents</b><ul>
+<li class="level1"><a href="#mlp_classification">Classification</a></li>
+<li class="level1"><a href="#mlp_regression">Regression</a></li>
+<li class="level1"><a href="#optimization_params">Optimization Parameters</a></li>
+<li class="level1"><a href="#predict">Prediction Functions/a></li>
+<li class="level1"><a href="#example">Examples</a></li>
+<li class="level1"><a href="#background">Technical Background</a></li>
+<li class="level1"><a href="#literature">Literature</a></li>
+<li class="level1"><a href="#related">Related Topics</a></li>
+</ul></div>
+
+Multi Layer Perceptron (MLP) is a model for regression and
+classification
+
+Also called "vanilla neural networks", they consist of several
+fully connected hidden layers with non-linear activation
+functions.  In the case of classification, the final layer of the
+neural net has as many nodes as classes, and the output of the
+neural net can be interpreted as the probability of a given input
+feature belonging to a specific class.
+
+
+@brief Solves classification and regression problems with several
+fully connected layers and nonlinear activation functions.
+
+@anchor mlp_classification
+@par Classification Training Function
+The mlp classification training function has the following format:
+<pre class="syntax">
+mlp_classification(
+    source_table,
+    output_table,
+    independent_varname,
+    dependent_varname,
+    hidden_layer_sizes,
+    optimizer_params,
+    activation
+    )
+</pre>
+\b Arguments
+<DL class="arglist">
+  <DT>source_table</DT>
+  <DD>TEXT. Name of the table containing the training data.</DD>
+
+  <DT>model_table</DT>
+  <DD>TEXT. Name of the output table containing the model. Details of the output
+   tables are provided below.
+  </DD>
+
+  <DT>independent_varname</DT>
+  <DD>TEXT. Expression list to evaluate for the
+    independent variables. An intercept variable should not be included as part
+    of this expression. Please note that expression should be able to be cast
+    to DOUBLE PRECISION[].
+  </DD>
+
+  <DT>dependent_varname</DT>
+  <DD> TEXT. Name of the dependent variable column. For classification, supported types are:
+  text, varchar, character varying, char, character
+  integer, smallint, bigint, and boolean.  </DD>
+
+  <DT>hidden_layer_sizes</DT>
+  <DD>INTEGER[], default: ARRAY[].
+  The number of neurons in each hidden layer.  The length of this array will
+  determine the number of hidden layers.  Empty for no hidden layers.
+  </DD>
+
+
+  <DT>optimizer_params (optional)</DT>
+  <DD>TEXT, default: NULL.
+    Parameters for optimization in a comma-separated string
+    of key-value pairs. See the description below for details.
+  </DD>
+
+  <DT>activation</DT>
+  <DD>TEXT, default: 'sigmoid'.
+    Activation function. Currently three functions are supported: 'sigmoid' (default),
+    'relu', and 'tanh'. The text can be any subset of the three
+    strings; for e.g., activation='s' will use the sigmoid activation.
+  </DD>
+</DL>
+
+<b>Output tables</b>
+<br>
+    The model table produced by mlp contains the following columns:
+    <table class="output">
+      <tr>
+        <th>coeffs</th>
+        <td>FLOAT8[]. Flat array containing the weights of the neural net</td>
+      </tr>
+      <tr>
+        <th>n_iterations</th>
+        <td>INTEGER. Number of iterations completed by stochastic gradient descent
+        algorithm. The algorithm either converged in this number of iterations
+        or hit the maximum number specified in the optimization parameters. </td>
+      </tr>
+      <tr>
+        <th>loss</th>
+        <td>FLOAT8. The cross entropy over the training data.
+        See Technical Background section below for more details.</td>
+      </tr>
+    </table>
+
+
+A summary table named \<model_table\>_summary is also created, which has the following columns:
+    <table class="output">
+    <tr>
+        <th>dependent_varname</th>
+        <td>The dependent variable.</td>
+    </tr>
+    <tr>
+        <th>independent_varname</th>
+        <td>The independent variables.</td>
+    </tr>
+    <tr>
+        <th>tolerance</th>
+        <td>The tolerance as given in optimizer_params.</td>
+    </tr>
+    <tr>
+        <th>step_size</th>
+        <td>The step size as given in optimizer_params.</td>
+    </tr>
+    <tr>
+        <th>n_iterations</th>
+        <td>The number of iterations run</td>
+    </tr>
+    <tr>
+        <th>n_tries</th>
+        <td>The number of tries as given in optimizer_params.</td>
+    </tr>
+    <tr>
+        <th>layer_sizes</th>
+        <td>The number of units in each layer including the input and output layer.</td>
+    </tr>
+    <tr>
+        <th>activation_function</th>
+        <td>The activation function.</td>
+    </tr>
+    <tr>
+        <th>is_classification</th>
+        <td>True if the model was trained for classification, False if it was trained
+        for regression</td>
+    </tr>
+    <tr>
+        <th>classes</th>
+        <td>The classes which were trained against (empty for regression)</td>
+    </tr>
+
+   </table>
+
+
+@anchor mlp_regression
+@par Regression Training Function
+The mlp regression training function has the following format:
+<pre class="syntax">
+mlp_regression(source_table,
+    source_table,
+    output_table,
+    independent_varname,
+    dependent_varname,
+    hidden_layer_sizes,
+    optimizer_params,
+    activation
+    )
+</pre>
+
+\b Arguments
+
+Specifications for regression are largely the same as for classification. In the
+model table, the loss will refer to mean square error instead of cross entropy. In the
+summary table, there is classes column. The following
+arguments have specifications which differ from mlp_classification:
+<DL class="arglist">
+<DT>dependent_varname</DT>
+  <DD>TEXT. Name of the dependent variable column.
+  For regression supported types are any numeric type, or array
+  or numeric types (for multiple regression).
+  </DD>
+</DL>
+
+
+@anchor optimizer_params
+@par Optimizer Parameters
+Parameters in this section are supplied in the \e optimizer_params argument as a string
+containing a comma-delimited list of name-value pairs. All of these named
+parameters are optional, and their order does not matter. You must use the
+format "<param_name> = <value>" to specify the value of a parameter, otherwise
+the parameter is ignored.
+
+
+<pre class="syntax">
+  'step_size = &lt;value>,
+   n_iterations = &lt;value>,
+   n_tries = &lt;value>,
+   tolerance = &lt;value>'
+</pre>
+\b Optimizer Parameters
+<DL class="arglist">
+
+<DT>step_size</dt>
+<DD>Default: [0.001].
+Also known as the learning rate. A small value is usually desirable to
+ensure convergence, while a large value provides more room for progress during
+training. Since the best value depends on the condition number of the data, in
+practice one often tunes this parameter.
+</DD>
+
+
+<DT>n_iterations</dt>
+<DD>Default: [100]. The maximum number of iterations allowed.
+</DD>
+<DT>n_tries</dt>
+<DD>Default: [1]. Number of times to retrain the network with randomly initialized
+weights
+</DD>
+
+<DT>tolerance</dt>
+<DD>Default: 0.001. The criterion to end iterations. The training stops whenever
+<the difference between the training models of two consecutive iterations is
+<smaller than \e tolerance or the iteration number is larger than \e max_iter.
+</DD>
+
+</DL>
+
+@anchor predict
+@par Prediction Function
+Used to generate predictions given a previously trained model on novel data.
+The same syntax is used for classification, and regression.
+<pre class="syntax">
+mlp_predict(model_table,
+            data_table,
+            id_col_name,
+            output_table,
+            pred_type)
+</pre>
+
+\b Arguments
+<DL class="arglist">
+  <DT>model_table</DT>
+  <DD>TEXT. Model table produced by the training function.</DD>
+
+  <DT>data_table</DT>
+  <DD>TEXT. Name of the table containing the data for prediction. This table is expected
+  to contain the same input features that were used during training. The table should
+  also contain id_col_name used for identifying each row.</DD>
+
+  <DT>id_col_name</DT>
+  <DD>TEXT. The name of the id column in the input table.</DD>
+
+  <DT>output_table</DT>
+  <DD>TEXT. Name of the table where output predictions are written. If this
+table name is already in use, then an error is returned.  Table contains:</DD>
+    <table class="output">
+      <tr>
+        <th>id</th>
+        <td>Gives the 'id' for each prediction, corresponding to each row from the data_table.</td>
+      </tr>
+      <tr>
+        <th>estimated_<COL_NAME></th>
+        <td>
+        (For pred_type='response') The estimated class
+         for classification or value for regression, where
+         <COL_NAME> is the name of the column to be
+         predicted from training data
+        </td>
+      </tr>
+      <tr>
+        <th>prob_<CLASS></th>
+        (For pred_type='prob' for classification) The
+        probability of a given class <CLASS> as given by
+        softmax. There will be one column for each class
+        in the training data.
+        <td>
+        </td>
+      </tr>
+
+
+  <DT>pred_type</DT>
+  <DD>TEXT.
+
+the type of output requested:
+'response' gives the actual prediction,
+'prob' gives the probability of each class.
+for regression, only type='response' is defined.
+The name of the id column in the input table.</DD>
+</DL>
+</table>
+
+@anchor example
+@par Examples
+-#  Create an input data set.
+<pre class="example">
+
+#TODO start editing from here
+CREATE TABLE iris_data(
+    id integer,
+    attributes numeric[],
+    class_text varchar,
+    class integer
+);
+
+INSERT INTO iris_data VALUES
+(1,ARRAY[5.1,3.5,1.4,0.2],'Iris-setosa',1),
+(2,ARRAY[4.9,3.0,1.4,0.2],'Iris-setosa',1),
+(3,ARRAY[4.7,3.2,1.3,0.2],'Iris-setosa',1),
+(4,ARRAY[4.6,3.1,1.5,0.2],'Iris-setosa',1),
+(5,ARRAY[5.0,3.6,1.4,0.2],'Iris-setosa',1),
+(6,ARRAY[5.4,3.9,1.7,0.4],'Iris-setosa',1),
+(7,ARRAY[4.6,3.4,1.4,0.3],'Iris-setosa',1),
+(8,ARRAY[5.0,3.4,1.5,0.2],'Iris-setosa',1),
+(9,ARRAY[4.4,2.9,1.4,0.2],'Iris-setosa',1),
+(10,ARRAY[4.9,3.1,1.5,0.1],'Iris-setosa',1),
+(11,ARRAY[7.0,3.2,4.7,1.4],'Iris-versicolor',2),
+(12,ARRAY[6.4,3.2,4.5,1.5],'Iris-versicolor',2),
+(13,ARRAY[6.9,3.1,4.9,1.5],'Iris-versicolor',2),
+(14,ARRAY[5.5,2.3,4.0,1.3],'Iris-versicolor',2),
+(15,ARRAY[6.5,2.8,4.6,1.5],'Iris-versicolor',2),
+(16,ARRAY[5.7,2.8,4.5,1.3],'Iris-versicolor',2),
+(17,ARRAY[6.3,3.3,4.7,1.6],'Iris-versicolor',2),
+(18,ARRAY[4.9,2.4,3.3,1.0],'Iris-versicolor',2),
+(19,ARRAY[6.6,2.9,4.6,1.3],'Iris-versicolor',2),
+(20,ARRAY[5.2,2.7,3.9,1.4],'Iris-versicolor',2),
+
+
+</pre>
+-# Generate a multilayer perception with a single hidden layer of 5 units.
+Use the attributes column as the independent variables, and use the class
+column as the classification. Set the tolerance to 0 so that 5000
+iterations will be run. Use a hyperbolic tangent activation function.
+The model will be written to mlp_result.
+<pre class="example">
+
+SELECT madlib.mlp_classification(
+    'iris_data',      -- Source table
+    'mlp_model',      -- Destination table
+    'attributes',     -- Input features
+    'class_text',     -- Label
+    ARRAY[5],         -- Number of units per layer
+    'step_size=0.003,
+    n_iterations=5000,
+    tolerance=0',     -- Optimizer params
+    'tanh');          -- Activation function
+</pre>
+-# View the result for the model.
+<pre class="example">
+-- Set extended display on for easier reading of output
+\\x ON
+SELECT * FROM mlp_result;
+</pre>
+Result:
+<pre class="result">
+-[ RECORD 1 ]------+---------------------------------------------------------------
+coef               | {0.152192069515,-0.29631947495,0.0968619000065,0.362682248051}
+loss               | 601.279740124
+norm_of_gradient   | 1300.96615851627
+num_iterations     | 100
+num_rows_processed | 15
+num_rows_skipped   | 0
+dep_var_mapping    | {f,t}
+</pre>
+-# Next generate a nonlinear model using a Gaussian kernel. This time we specify
+the initial step size and maximum number of iterations to run. As part of the
+kernel parameter, we choose 10 as the dimension of the space where we train
+mlp. A larger number will lead to a more powerful model but run the risk of
+overfitting. As a result, the model will be a 10 dimensional vector, instead
+of 4 as in the case of linear model, which we will verify when we examine the
+models.
+<pre class="example">
+DROP TABLE IF EXISTS houses_mlp_gaussian, houses_mlp_gaussian_summary, houses_mlp_gaussian_random;
+SELECT madlib.mlp_classification( 'houses',
+                                  'houses_mlp_gaussian',
+                                  'price < 100000',
+                                  'ARRAY[1, tax, bath, size]',
+                                  'gaussian',
+                                  'n_components=10',
+                                  '',
+                                  'init_stepsize=1, max_iter=200'
+                           );
+</pre>
+-# View the results from kernel mlp for classification.
+<pre class="example">
+-- Set extended display on for easier reading of output
+\\x ON
+SELECT * FROM houses_mlp_gaussian;
+</pre>
+Result:
+<pre class="result">
+-[ RECORD 1 ]------+--------------------------------------------------------------------------------------------------------------------------------------------------
+coef               | {0.183800813574,-0.78724997813,1.54121854068,1.24432527042,4.01230959334,1.07061097224,-4.92576349408,0.437699542875,0.3128600981,-1.63880635658}
+loss               | 0.998735180388
+norm_of_gradient   | 0.729823950583579
+num_iterations     | 196
+num_rows_processed | 15
+num_rows_skipped   | 0
+dep_var_mapping    | {f,t}
+</pre>
+-#  The regression models have a similar format (model output not shown). First, for a linear model:
+<pre class="example">
+DROP TABLE IF EXISTS houses_mlp_regression, houses_mlp_regression_summary;
+SELECT madlib.mlp_regression('houses',
+                             'houses_mlp_regression',
+                             'price',
+                             'ARRAY[1, tax, bath, size]'
+                           );
+</pre>
+For a non-linear regression model using a Gaussian kernel:
+<pre class="example">
+DROP TABLE IF EXISTS houses_mlp_gaussian_regression, houses_mlp_gaussian_regression_summary, houses_mlp_gaussian_regression_random;
+SELECT madlib.mlp_regression( 'houses',
+                              'houses_mlp_gaussian_regression',
+                              'price',
+                              'ARRAY[1, tax, bath, size]',
+                              'gaussian',
+                              'n_components=10',
+                              '',
+                              'init_stepsize=1, max_iter=200'
+                           );
+</pre>
+-# Now train a non-linear one-class mlp for novelty detection, using a Gaussian kernel.
+Note that the dependent variable is not a parameter for one-class:
+<pre class="example">
+DROP TABLE IF EXISTS houses_one_class_gaussian, houses_one_class_gaussian_summary, houses_one_class_gaussian_random;
+select madlib.mlp_one_class('houses',
+                            'houses_one_class_gaussian',
+                            'ARRAY[1,tax,bedroom,bath,size,lot,price]',
+                            'gaussian',
+                            'gamma=0.5,n_components=55, random_state=3',
+                            NULL,
+                            'max_iter=100, init_stepsize=10,lambda=10, tolerance=0'
+                            );
+</pre>
+-# View the result for the Gaussian novelty detection model.
+<pre class="example">
+-- Set extended display on for easier reading of output
+\\x ON
+SELECT * FROM houses_one_class_gaussian;
+</pre>
+Result:
+<pre class="result">
+-[ RECORD 1 ]------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+coef               | {redacted for brevity}
+loss               | 15.1053343738
+norm_of_gradient   | 13.9133653663837
+num_iterations     | 100
+num_rows_processed | 16
+num_rows_skipped   | -1
+dep_var_mapping    | {-1,1}
+</pre>
+-# Now let's look at the prediction functions.  We want to predict if house price
+is less than $100,000.  In the following examples we will 
+use the training data set for prediction as well, which is not usual but serves to
+show the syntax.  The predicted results are in the \e prediction column and the 
+actual data is in the \e target column.
+For the linear model:
+<pre class="example">
+DROP TABLE IF EXISTS houses_pred;
+SELECT madlib.mlp_predict('houses_mlp', 'houses', 'id', 'houses_pred');
+SELECT *, price < 100000 AS target FROM houses JOIN houses_pred USING (id) ORDER BY id;
+</pre>
+Result:
+<pre class="result">
+ id | tax  | bedroom | bath | price  | size |  lot  | prediction | decision_function  | target 
+----+------+---------+------+--------+------+-------+------------+--------------------+--------
+  1 |  590 |       2 |    1 |  50000 |  770 | 22100 | t          |   104.685894748292 | t
+  2 | 1050 |       3 |    2 |  85000 | 1410 | 12000 | t          |   200.592436923938 | t
+  3 |   20 |       3 |    1 |  22500 | 1060 |  3500 | t          |   378.765847404582 | t
+  4 |  870 |       2 |    2 |  90000 | 1300 | 17500 | t          |   214.034895129328 | t
+  5 | 1320 |       3 |    2 | 133000 | 1500 | 30000 | t          |   153.227581012028 | f
+  6 | 1350 |       2 |    1 |  90500 |  820 | 25700 | f          |  -102.382793811158 | t
+  7 | 2790 |       3 |  2.5 | 260000 | 2130 | 25000 | f          |  -53.8237999423388 | f
+  8 |  680 |       2 |    1 | 142500 | 1170 | 22000 | t          |   223.090041223192 | f
+  9 | 1840 |       3 |    2 | 160000 | 1500 | 19000 | f          | -0.858545961972027 | f
+ 10 | 3680 |       4 |    2 | 240000 | 2790 | 20000 | f          |   -78.226279884182 | f
+ 11 | 1660 |       3 |    1 |  87000 | 1030 | 17500 | f          |  -118.078558954948 | t
+ 12 | 1620 |       3 |    2 | 118600 | 1250 | 20000 | f          |  -26.3388234857219 | f
+ 13 | 3100 |       3 |    2 | 140000 | 1760 | 38000 | f          |  -279.923699905712 | f
+ 14 | 2070 |       2 |    3 | 148000 | 1550 | 14000 | f          |  -50.7810508979155 | f
+ 15 |  650 |       3 |  1.5 |  65000 | 1450 | 12000 | t          |   333.579085875975 | t
+</pre>
+Prediction using the Gaussian model:
+<pre class="example">
+DROP TABLE IF EXISTS houses_pred_gaussian;
+SELECT madlib.mlp_predict('houses_mlp_gaussian', 'houses', 'id', 'houses_pred_gaussian');
+SELECT *, price < 100000 AS target FROM houses JOIN houses_pred_gaussian USING (id) ORDER BY id;
+</pre>
+This produces a more accurate result than the linear case for this small data set:
+<pre class="result">
+ id | tax  | bedroom | bath | price  | size |  lot  | prediction | decision_function | target 
+----+------+---------+------+--------+------+-------+------------+-------------------+--------
+  1 |  590 |       2 |    1 |  50000 |  770 | 22100 | t          |  1.00338548176312 | t
+  2 | 1050 |       3 |    2 |  85000 | 1410 | 12000 | t          |  1.00000000098154 | t
+  3 |   20 |       3 |    1 |  22500 | 1060 |  3500 | t          | 0.246566699635389 | t
+  4 |  870 |       2 |    2 |  90000 | 1300 | 17500 | t          |   1.0000000003367 | t
+  5 | 1320 |       3 |    2 | 133000 | 1500 | 30000 | f          | -1.98940593324397 | f
+  6 | 1350 |       2 |    1 |  90500 |  820 | 25700 | t          |  3.74336995109761 | t
+  7 | 2790 |       3 |  2.5 | 260000 | 2130 | 25000 | f          | -1.01574407296086 | f
+  8 |  680 |       2 |    1 | 142500 | 1170 | 22000 | f          |  -1.0000000002071 | f
+  9 | 1840 |       3 |    2 | 160000 | 1500 | 19000 | f          | -3.88267069310101 | f
+ 10 | 3680 |       4 |    2 | 240000 | 2790 | 20000 | f          | -3.44507576539002 | f
+ 11 | 1660 |       3 |    1 |  87000 | 1030 | 17500 | t          |   2.3409866081761 | t
+ 12 | 1620 |       3 |    2 | 118600 | 1250 | 20000 | f          | -3.51563221173085 | f
+ 13 | 3100 |       3 |    2 | 140000 | 1760 | 38000 | f          | -1.00000000011163 | f
+ 14 | 2070 |       2 |    3 | 148000 | 1550 | 14000 | f          | -1.87710363254055 | f
+ 15 |  650 |       3 |  1.5 |  65000 | 1450 | 12000 | t          |  1.34334834982263 | t
+</pre>
+-# Prediction using the linear regression model:
+<pre class="example">
+DROP TABLE IF EXISTS houses_regr;
+SELECT madlib.mlp_predict('houses_mlp_regression', 'houses', 'id', 'houses_regr');
+SELECT * FROM houses JOIN houses_regr USING (id) ORDER BY id;
+</pre>
+Result for the linear regression model:
+<pre class="result">
+  id | tax  | bedroom | bath | price  | size |  lot  |    prediction    | decision_function 
+----+------+---------+------+--------+------+-------+------------------+-------------------
+  1 |  590 |       2 |    1 |  50000 |  770 | 22100 | 55288.6992755623 |  55288.6992755623
+  2 | 1050 |       3 |    2 |  85000 | 1410 | 12000 | 99978.8137019119 |  99978.8137019119
+  3 |   20 |       3 |    1 |  22500 | 1060 |  3500 | 43157.5130381023 |  43157.5130381023
+  4 |  870 |       2 |    2 |  90000 | 1300 | 17500 | 88098.9557296729 |  88098.9557296729
+  5 | 1320 |       3 |    2 | 133000 | 1500 | 30000 | 114803.884262468 |  114803.884262468
+  6 | 1350 |       2 |    1 |  90500 |  820 | 25700 | 88899.5186193813 |  88899.5186193813
+  7 | 2790 |       3 |  2.5 | 260000 | 2130 | 25000 | 201108.397013076 |  201108.397013076
+  8 |  680 |       2 |    1 | 142500 | 1170 | 22000 | 75004.3236915733 |  75004.3236915733
+  9 | 1840 |       3 |    2 | 160000 | 1500 | 19000 | 136434.749667136 |  136434.749667136
+ 10 | 3680 |       4 |    2 | 240000 | 2790 | 20000 | 264483.856987395 |  264483.856987395
+ 11 | 1660 |       3 |    1 |  87000 | 1030 | 17500 | 110180.048139857 |  110180.048139857
+ 12 | 1620 |       3 |    2 | 118600 | 1250 | 20000 | 117300.841695563 |  117300.841695563
+ 13 | 3100 |       3 |    2 | 140000 | 1760 | 38000 | 199229.683967752 |  199229.683967752
+ 14 | 2070 |       2 |    3 | 148000 | 1550 | 14000 | 147998.930271016 |  147998.930271016
+ 15 |  650 |       3 |  1.5 |  65000 | 1450 | 12000 | 84936.7661235861 |  84936.7661235861
+</pre>
+For the non-linear Gaussian regression model (output not shown):
+<pre class="example">
+DROP TABLE IF EXISTS houses_gaussian_regr;
+SELECT madlib.mlp_predict('houses_mlp_gaussian_regression', 'houses', 'id', 'houses_gaussian_regr');
+SELECT * FROM houses JOIN houses_gaussian_regr USING (id) ORDER BY id;
+</pre>
+-#  For the novelty detection using one-class, let's create a test data set using 
+the last 3 values from the training set plus an outlier at the end (10x price):
+<pre class="example">
+DROP TABLE IF EXISTS houses_one_class_test;
+CREATE TABLE houses_one_class_test (id INT, tax INT, bedroom INT, bath FLOAT, price INT,
+            size INT, lot INT);
+COPY houses_one_class_test FROM STDIN WITH DELIMITER '|';
+ 1 | 3100 |       3 |    2 | 140000 | 1760 | 38000
+ 2 | 2070 |       2 |    3 | 148000 | 1550 | 14000
+ 3 |  650 |       3 |  1.5 |  65000 | 1450 | 12000
+ 4 |  650 |       3 |  1.5 |  650000 | 1450 | 12000
+\\.
+</pre>
+Now run prediction on the Gaussian one-class novelty detection model:
+<pre class="example">
+DROP TABLE IF EXISTS houses_once_class_pred;
+SELECT madlib.mlp_predict('houses_one_class_gaussian', 'houses_one_class_test', 'id', 'houses_one_class_pred');
+SELECT * FROM houses_one_class_test JOIN houses_one_class_pred USING (id) ORDER BY id;
+</pre>
+Result showing the last row predicted to be novel:
+<pre class="result">
+ id | tax  | bedroom | bath | price  | size |  lot  | prediction |  decision_function  
+----+------+---------+------+--------+------+-------+------------+---------------------
+  1 | 3100 |       3 |    2 | 140000 | 1760 | 38000 |          1 |   0.111497008121437
+  2 | 2070 |       2 |    3 | 148000 | 1550 | 14000 |          1 |  0.0996021345169148
+  3 |  650 |       3 |  1.5 |  65000 | 1450 | 12000 |          1 |  0.0435064008756942
+  4 |  650 |       3 |  1.5 | 650000 | 1450 | 12000 |         -1 | -0.0168967845338403
+</pre>
+-# Create a model for an unbalanced class-size dataset, then use the 'balanced' parameter
+to classify:
+<pre class="example">
+DROP TABLE IF EXISTS houses_mlp_gaussian, houses_mlp_gaussian_summary, houses_mlp_gaussian_random;
+SELECT madlib.mlp_classification( 'houses',
+                                  'houses_mlp_gaussian',
+                                  'price < 150000',
+                                  'ARRAY[1, tax, bath, size]',
+                                  'gaussian',
+                                  'n_components=10',
+                                  '',
+                                  'init_stepsize=1, max_iter=200, class_weight=balanced'
+                           );
+SELECT * FROM houses_mlp_gaussian;
+</pre>
+<pre class="result">
+-[ RECORD 1 ]------+----------------------------------------------------------------------------------------------------------------------------------------------------
+coef               | {-0.621843913637,2.4166374426,-1.54726833725,-1.74512599505,1.16231799548,-0.54019307285,-4.14373293694,-0.623069170717,3.59669949057,-1.005501237}
+loss               | 1.87657250199
+norm_of_gradient   | 1.41148000266816
+num_iterations     | 174
+num_rows_processed | 15
+num_rows_skipped   | 0
+dep_var_mapping    | {f,t}
+</pre>
+Note that the results you get for all examples may vary with the platform you are using.
+
+@anchor background
+@par Technical Background
+
+To solve linear mlp, the following objective function is minimized:
+\f[
+    \underset{w,b}{\text{Minimize }} \lambda||w||^2 + \frac{1}{n}\sum_{i=1}^n \ell(y_i,f_{w,b}(x_i))
+
+\f]
+
+ where \f$(x_1,y_1),\ldots,(x_n,y_n)\f$ are labeled training data and
+ \f$\ell(y,f(x))\f$ is a loss function. When performing classification,
+ \f$\ell(y,f(x)) = \max(0,1-yf(x))\f$ is the <em>hinge loss</em>.
+ For regression, the loss function \f$\ell(y,f(x)) = \max(0,|y-f(x)|-\epsilon)\f$
+ is used.
+
+ If \f$ f_{w,b}(x) = \langle w, x\rangle + b\f$ is linear, then the
+ objective function is convex and incremental gradient descent (IGD, or SGD)
+ can be applied to find a global minimum. See Feng, et al. [1] for more details.
+
+To learn with Gaussian or polynomial kernels, the training data is first mapped
+via a <em>random feature map</em> in such a way that the usual inner product in
+the feature space approximates the kernel function in the input space. The
+linear mlp training function is then run on the resulting data. See the papers
+[2,3] for more information on random feature maps.
+
+Also, see the book [4] by Scholkopf and Smola  for more details on mlps in general.
+
+@anchor literature
+@literature
+
+@anchor mlp-lit-1
+[1] Xixuan Feng, Arun Kumar, Ben Recht, and Christopher Re:
+    Towards a Unified Architecture for in-RDBMS analytics,
+    in SIGMOD Conference, 2012
+    http://www.eecs.berkeley.edu/~brecht/papers/12.FengEtAl.SIGMOD.pdf
+
+@anchor mlp-lit-2
+[2] Purushottam Kar and Harish Karnick: Random Feature Maps for Dot
+    Product Kernels, Proceedings of the 15th International Conference
+    on Artificial Intelligence and Statistics, 2012,
+    http://machinelearning.wustl.edu/mlpapers/paper_files/AISTATS2012_KarK12.pdf
+
+@anchor mlp-lit-3
+[3] Ali Rahmini and Ben Recht: Random Features for Large-Scale
+Kernel Machines, Neural Information Processing Systems 2007,
+    http://www.eecs.berkeley.edu/~brecht/papers/07.rah.rec.nips.pdf
+
+@anchor mlp-lit-4
+[4] Bernhard Scholkopf and Alexander Smola: Learning with Kernels,
+    The MIT Press, Cambridge, MA, 2002.
+
+@anchor mlp-lit-5
+[5] Vladimir Cherkassky and Yunqian Ma: Practical Selection of mlp Parameters
+    and Noise Estimation for mlp Regression, Neural Networks, 2004
+    http://www.ece.umn.edu/users/cherkass/N2002-SI-mlp-13-whole.pdf
+
+@anchor related
+@par Related Topics
+
+File mlp.sql_in documenting the training function
+
+@internal
+@sa Namespace mlp (documenting the driver/outer loop implemented in
+    Python), Namespace
+    \ref madlib::modules::regress documenting the implementation in C++
+@endinternal
+*/
+
 
 CREATE TYPE MADLIB_SCHEMA.mlp_result AS (
         coeff    DOUBLE PRECISION[],

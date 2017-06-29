@@ -230,7 +230,6 @@ internal_initialize_model(AnyType &args, MLPModel<MutableArrayHandle<double> > &
     indVar.rebind(x.memoryHandle(), x.size());
 }
 
-// #TODO switch to internal
 AnyType
 internal_predict_mlp_output::run(AnyType &args) {
     MLPModel<MutableArrayHandle<double> > model;

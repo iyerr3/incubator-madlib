@@ -132,7 +132,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         layer_sizes_str=py_list_to_sql_string(layer_sizes, array_type="integer")
         classes_str=py_list_to_sql_string([strip_end_quotes(cl,"'") for cl in classes], array_type=dependent_type)
         # TODO validation for summary
-        summary_table_query = """
+        summary_table_creation_query = """
             CREATE TABLE {output_table}_summary
             (independent_varname TEXT,
             dependent_varname TEXT,
@@ -144,7 +144,9 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             activation_function TEXT,
             is_classification BOOLEAN,
             classes {dependent_type}[]
-            );
+            );""".format(**locals())
+
+        summary_table_update_query = """
             INSERT INTO {output_table}_summary VALUES
             ('{independent_varname}',
             '{original_dependent_varname}',
@@ -156,9 +158,10 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             '{activation_name}',
             {is_classification},
             {classes_str}
-            )
+            );
             """.format(**locals())
-        plpy.execute(summary_table_query)
+        plpy.execute(summary_table_creation_query)
+        plpy.execute(summary_table_update_query)
 # ----------------------------------------------------------------------
 
 
@@ -243,6 +246,7 @@ def _validate_args(source_table, output_table, independent_varname,
     """
     input_tbl_valid(source_table, "MLP")
     output_tbl_valid(output_table, "MLP")
+    output_tbl_valid(output_table+"_summary", "MLP")
     _assert(is_var_valid(source_table, independent_varname),
             "MLP error: invalid independent_varname "
             "('{independent_varname}') for source_table "
@@ -347,7 +351,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
     cols_in_tbl_valid(model_table, ['coeff'], 'MLP')
     # summary table
     summary_table = add_postfix(model_table, "_summary")
-    output_tbl_valid(summary_table, 'MLP')
+    input_tbl_valid(summary_table, 'MLP')
     cols_in_tbl_valid(summary_table,
                       ['dependent_varname', 'independent_varname',
                        'activation_function',
@@ -388,7 +392,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
         if not is_classification:
             sql = header + """
                 SELECT {id_col_name},
-                       {schema_madlib}._predict_mlp_output(
+                       {schema_madlib}.internal_predict_mlp_output(
                             {coeff},
                             {independent_varname}::DOUBLE PRECISION[],
                             {is_classification},
@@ -412,7 +416,6 @@ def mlp_predict(schema_madlib, model_table, data_table,
                 # This join is to recover the class name from the summary table, as prediction just returns an index
                 classes_with_index_table = unique_string()
                 classes_table = unique_string()
-                plpy.info("classes: ",classes)
                 sql = header + """
                         WITH {classes_with_index_table} AS
                             (WITH {classes_table} AS
@@ -424,7 +427,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         FROM (
                              SELECT
                                 {id_col_name},
-                                {schema_madlib}._predict_mlp_class(
+                                {schema_madlib}.internal_predict_mlp_class(
                                         {coeff}::DOUBLE PRECISION[],
                                         {independent_varname}::DOUBLE PRECISION[],
                                         {is_classification},
@@ -444,7 +447,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         FROM (
                              SELECT
                                 {id_col_name},
-                                {schema_madlib}._predict_mlp_class(
+                                {schema_madlib}.internal_predict_mlp_class(
                                         {coeff}::DOUBLE PRECISION[],
                                         {independent_varname}::DOUBLE PRECISION[],
                                         {is_classification},
@@ -534,19 +537,19 @@ def mlp_help(schema_madlib, message, is_classification):
                                  parameters for optimization in
                                  a comma-separated string of key-value pairs.
 
-        step_size DOUBLE PRECISION, -- Default: 0.001
-                                       Learning rate
-        n_iterations INTEGER,       -- Default: 100
-                                       Number of iterations per try
-        n_tries INTEGER,            -- Default: 1
-                                       Total number of training cycles,
-                                       with random initializations to avoid
-                                       local minima.
-        tolerance DOUBLE PRECISION, -- Default: 0.001
-                                       If the distance in loss between
-                                       two iterations is less than the
-                                       tolerance training will stop, even if
-                                       n_iterations has not been reached
+            step_size DOUBLE PRECISION, -- Default: 0.001
+                                           Learning rate
+            n_iterations INTEGER,       -- Default: 100
+                                           Number of iterations per try
+            n_tries INTEGER,            -- Default: 1
+                                           Total number of training cycles,
+                                           with random initializations to avoid
+                                           local minima.
+            tolerance DOUBLE PRECISION, -- Default: 0.001
+                                           If the distance in loss between
+                                           two iterations is less than the
+                                           tolerance training will stop, even if
+                                           n_iterations has not been reached
 
         activation            -- optional, default: 'sigmoid'.
                                  supported activations: 'relu', 'sigmoid',
@@ -608,7 +611,7 @@ def mlp_help(schema_madlib, message, is_classification):
     """
 
     classification_example = """
-    - Create input table
+    -- Create input table
 
     CREATE TABLE iris_data(
         id integer,
@@ -640,24 +643,24 @@ def mlp_help(schema_madlib, message, is_classification):
     (20,ARRAY[5.2,2.7,3.9,1.4],'Iris-versicolor',2),
 
 
-    - Generate a multilayer perception with a single hidden layer of 5 units.
+    -- Generate a multilayer perception with a single hidden layer of 5 units.
     Use the attributes column as the independent variables, and use the class
     column as the classification. Set the tolerance to 0 so that 1000
     iterations will be run. Use a hyperbolic tangent activation function.
     The model will be written to mlp_result.
 
-    SELECT mlp_classification(
+    SELECT {schema_madlib}.mlp_classification(
         'iris_data',      -- Source table
         'mlp_model',      -- Destination table
         'attributes',     -- Input features
         'class_text',     -- Label
         ARRAY[5],         -- Number of units per layer
-        'step_size=0.001,
-        n_iterations=1000,
+        'step_size=0.003,
+        n_iterations=5000,
         tolerance=0',     -- Optimizer params
         'tanh');          -- Activation function
 
-    """
+    """.format(**args)
     example = classification_example if is_classification else regression_example
     if not message:
         return summary
@@ -700,10 +703,10 @@ def mlp_predict_help(schema_madlib, message, is_classification):
         data_table,         -- name of data table
         id_col_name,        -- id column for data table
         output_table,       -- name of output table
-        pred_type,          -- the type of output required:
-                               'response' gives the actual prediction,
-                               'prob' gives the probability of each class.
-                               for regression, only type='response' is defined.
+        pred_type           -- the type of output requested:
+                            -- 'response' gives the actual prediction,
+                            -- 'prob' gives the probability of each class.
+                            -- for regression, only type='response' is defined.
     );
 
 
@@ -731,7 +734,7 @@ def mlp_predict_help(schema_madlib, message, is_classification):
     -- and model tables
 
     -- Predict classes using
-    SELECT mlp_predict(
+    SELECT {schema_madlib}.mlp_predict(
         'mlp_model',         -- Model table
         'iris_data',         -- Test data table
         'id',                -- Id column in test table
@@ -740,6 +743,11 @@ def mlp_predict_help(schema_madlib, message, is_classification):
     );
 
     SELECT * FROM mlp_prediction;
+
+    WITH total_count AS (SELECT count(*) AS c FROM iris_data)
+    SELECT count(*)/((SELECT c from total_count)::DOUBLE PRECISION) AS train_accuracy FROM
+        (select iris_data.class_text as actual_label, mlp_prediction.estimated_class_text as predicted_label from mlp_prediction INNER JOIN iris_data ON iris_data.id=mlp_prediction.id) q
+    WHERE q.actual_label=q.predicted_label;
     """.format(**args)
 
     if not message:
