@@ -304,7 +304,7 @@ def _get_activation_function_name(activation_function):
                                        if x.startswith(activation_function))
         except StopIteration:
             # next() returns a StopIteration if no element found
-            plpy.error("SVM Error: Invalid activation function: "
+            plpy.error("MLP Error: Invalid activation function: "
                        "{0}. Supported activation functions are ({1})"
                        .format(activation_function, ','.join(sorted(supported_activation_function))))
     return activation_function
@@ -322,6 +322,171 @@ def _format_label(label):
     return label
 # -------------------------------------------------------------------------
 
+
+
+
+def mlp_predict(schema_madlib, model_table, data_table,
+                id_col_name, output_table,
+                pred_type='response', **kwargs):
+    """ Score new observations using a trained neural network
+
+    @param schema_madlib Name of the schema where MADlib is installed
+    @param model_table Name of learned model
+    @param data_table Name of table/view containing the data
+                          points to be scored
+    @param id_col_name Name of column in source_table containing
+                       (integer) identifier for data point
+    @param output_table Name of table to store the results
+    @param pred_type: str, The type of output required:
+                    'response' gives the actual response values,
+                    'prob' gives the probability of the classes in a
+                  For regression, only type='response' is defined.
+    """
+    # model table
+    input_tbl_valid(model_table, 'MLP')
+    cols_in_tbl_valid(model_table, ['coeff'], 'MLP')
+    # summary table
+    summary_table = add_postfix(model_table, "_summary")
+    output_tbl_valid(summary_table, 'MLP')
+    cols_in_tbl_valid(summary_table,
+                      ['dependent_varname', 'independent_varname',
+                       'activation_function',
+                       'tolerance', 'step_size','n_iterations',
+                       'n_tries','classes', 'layer_sizes'],
+                      'MLP')
+
+# TODO validation for summary
+    # read necessary info from summary
+    summary = plpy.execute("SELECT * FROM {0}".format(summary_table))[0]
+    coeff = py_list_to_sql_string(plpy.execute("SELECT * FROM {0}".format(model_table))[0]["coeff"])
+    dependent_varname = summary['dependent_varname']
+    independent_varname = summary['independent_varname']
+    activation_function = _get_activation_index(summary['activation_function'])
+    layer_sizes = py_list_to_sql_string(summary['layer_sizes'],array_type="INTEGER")
+    # coeff = py_list_to_sql_string(summary['coeff'],array_type="double precision")
+    # optimizer_params = summary['optimizer_params']
+    is_classification = int(summary["is_classification"])
+
+    pred_name = ('"prob_{0}"' if pred_type == "prob" else
+                 '"estimated_{0}"').format(dependent_varname.replace('"', '').strip())
+
+    input_tbl_valid(data_table, 'MLP')
+
+    _assert(is_var_valid(data_table, independent_varname),
+            "MLP Error: independent_varname ('{0}') is invalid for data_table ({1})".
+            format(independent_varname, data_table))
+    _assert(id_col_name is not None, "MLP Error: id_col_name is NULL")
+    _assert(is_var_valid(data_table, id_col_name),
+            "MLP Error: id_col_name ('{0}') is invalid for {1}".
+            format(id_col_name, data_table))
+    output_tbl_valid(output_table, 'MLP')
+    # optimizer_param_dict = _get_optimizer_params(optimizer_params)
+
+    with MinWarning("warning"):
+        header = "CREATE TABLE " + output_table + " AS "
+        # Regression
+        if not is_classification:
+            sql = header + """
+                SELECT {id_col_name},
+                       {schema_madlib}._predict_mlp_output(
+                            {coeff},
+                            {independent_varname}::DOUBLE PRECISION[],
+                            {is_classification},
+                            {activation_function},
+                            {layer_sizes}
+                        ) as {pred_name}
+                FROM {data_table}
+                """
+        else:
+            # if dep_type.lower() == "boolean":
+            #     # some platforms don't have text to boolean cast. We manually check the string.
+            #     dep_cast_str = ("(case {pred_name} when 'True' then "
+            #                     "True else False end)::BOOLEAN as {pred_name}")
+            # else:
+            #     dep_cast_str = "{pred_name}::{dep_type}"
+            summary_query = """
+            SELECT classes FROM {0}_summary ORDER BY classes
+            """.format(model_table)
+            classes = plpy.execute(summary_query)[0]['classes']
+            if pred_type == "response":
+                # This join is to recover the class name from the summary table, as prediction just returns an index
+                classes_with_index_table = unique_string()
+                classes_table = unique_string()
+                plpy.info("classes: ",classes)
+                sql = header + """
+                        WITH {classes_with_index_table} AS
+                            (WITH {classes_table} AS
+                                (SELECT UNNEST(classes) AS class FROM {summary_table})
+                            SELECT row_number() OVER (ORDER BY class) AS id,class FROM {classes_table})
+                        SELECT
+                            q.{id_col_name}
+                           ,{classes_with_index_table}.class as {pred_name}
+                        FROM (
+                             SELECT
+                                {id_col_name},
+                                {schema_madlib}._predict_mlp_class(
+                                        {coeff}::DOUBLE PRECISION[],
+                                        {independent_varname}::DOUBLE PRECISION[],
+                                        {is_classification},
+                                        {activation_function},
+                                        {layer_sizes}
+                                        )
+                               as pred_idx
+                            FROM {data_table}
+                        ) q
+                        INNER JOIN {classes_with_index_table}
+                        ON {classes_with_index_table}.id-1=q.pred_idx
+                    """
+                sql = header + """
+                        SELECT
+                            q.{id_col_name}
+                           ,(ARRAY{classes})[pred_idx+1] as {pred_name}
+                        FROM (
+                             SELECT
+                                {id_col_name},
+                                {schema_madlib}._predict_mlp_class(
+                                        {coeff}::DOUBLE PRECISION[],
+                                        {independent_varname}::DOUBLE PRECISION[],
+                                        {is_classification},
+                                        {activation_function},
+                                        {layer_sizes}
+                                        )
+                               as pred_idx
+                            FROM {data_table}
+                        ) q
+                    """
+            else:
+                # Incomplete
+                intermediate_col = unique_string()
+                score_format = ',\n'.join([
+                    '{interim}[{j}] as "estimated_prob_{c}"'.
+                    format(j=i + 1, c=c.strip(' "'), interim=intermediate_col)
+                        for i, c in enumerate(classes)])
+                sql = header + """
+                    SELECT
+                        {id_col_name},
+                        {score_format}
+                        FROM (
+                            SELECT {id_col_name},
+                                   {schema_madlib}._predict_mlp_output(
+                                       {coeff}::DOUBLE PRECISION[],
+                                       {independent_varname}::DOUBLE PRECISION[],
+                                       {is_classification},
+                                       {activation_function},
+                                       {layer_sizes}
+                                       )::TEXT[]
+                                            AS {intermediate_col}
+                            FROM {data_table}
+                        ) q
+                    """
+#TODO add join for validation
+#  as s {join_str} {model} as m {using_str}
+    sql = sql.format(**locals())
+    with MinWarning('warning'):
+        plpy.execute(sql)
+
+    pass
+# ----------------------------------------------------------------------
 
 def mlp_help(schema_madlib, message, is_classification):
     method = 'mlp_classification' if is_classification else 'mlp_regression'
@@ -392,9 +557,15 @@ def mlp_help(schema_madlib, message, is_classification):
     ---------------------------------------------------------------------------
                                     OUTPUT
     ---------------------------------------------------------------------------
-    The model table produced by svm contains the following columns:
+    The model table produced by MLP contains the following columns:
 
-    #TODO
+    coeffs             -- Flat array containing the weights of the neural net
+
+    loss               -- The total loss over the training data. Cross entropy
+                          for classification and MSE for regression
+
+    num_iterations     -- The total number of training iterations
+
     """.format(**args)
 
     regression_example = """
@@ -477,9 +648,9 @@ def mlp_help(schema_madlib, message, is_classification):
 
     SELECT mlp_classification(
         'iris_data',      -- Source table
-        'mlp_result',     -- Destination table
+        'mlp_model',      -- Destination table
         'attributes',     -- Input features
-        'class',          -- Label
+        'class_text',     -- Label
         ARRAY[5],         -- Number of units per layer
         'step_size=0.001,
         n_iterations=1000,
@@ -499,148 +670,85 @@ def mlp_help(schema_madlib, message, is_classification):
             No such option. Use "SELECT {schema_madlib}.{method}()" for help.
         """.format(**args)
 
+def mlp_predict_help(schema_madlib, message, is_classification):
+    # TODO
+    args = dict(schema_madlib=schema_madlib)
 
-def mlp_predict(schema_madlib, model_table, data_table,
-                id_col_name, output_table,
-                pred_type='response', **kwargs):
-    """ Score new observations using a trained neural network
+    summary = """
+    ----------------------------------------------------------------
+                            SUMMARY
+    ----------------------------------------------------------------
+    Multi Layer Perceptron (MLP) is a model for regression and
+    classification
 
-    @param schema_madlib Name of the schema where MADlib is installed
-    @param model_table Name of learned model
-    @param data_table Name of table/view containing the data
-                          points to be scored
-    @param id_col_name Name of column in source_table containing
-                       (integer) identifier for data point
-    @param output_table Name of table to store the results
-    @param pred_type: str, The type of output required:
-                    'response' gives the actual response values,
-                    'prob' gives the probability of the classes in a
-                  For regression, only type='response' is defined.
-    """
-    # model table
-#TODO check if summary table exists
-    input_tbl_valid(model_table, 'MLP')
-    cols_in_tbl_valid(model_table, ['coeff'], 'MLP')
-    # summary table
-    summary_table = add_postfix(model_table, "_summary")
-    input_tbl_valid(summary_table, 'MLP')
-    cols_in_tbl_valid(summary_table,
-                      ['dependent_varname', 'independent_varname',
-                       'activation_function',
-                       'tolerance', 'step_size','n_iterations',
-                       'n_tries','classes', 'layer_sizes'],
-                      'MLP')
+    Also called "vanilla neural networks", they consist of several
+    fully connected hidden layers with non-linear activation
+    functions.
 
-# TODO validation for summary
-    # read necessary info from summary
-    summary = plpy.execute("SELECT * FROM {0}".format(summary_table))[0]
-    coeff = py_list_to_sql_string(plpy.execute("SELECT * FROM {0}".format(model_table))[0]["coeff"])
-    dependent_varname = summary['dependent_varname']
-    independent_varname = summary['independent_varname']
-    activation_function = _get_activation_index(summary['activation_function'])
-    layer_sizes = py_list_to_sql_string(summary['layer_sizes'],array_type="INTEGER")
-    # coeff = py_list_to_sql_string(summary['coeff'],array_type="double precision")
-    # optimizer_params = summary['optimizer_params']
-    is_classification = int(summary["is_classification"])
+    For more details on function usage:
+        SELECT {schema_madlib}.mlp_predict('usage')
 
-    pred_name = ('"prob_{0}"' if pred_type == "prob" else
-                 '"estimated_{0}"').format(dependent_varname.replace('"', '').strip())
+    For a small example on using the function:
+        SELECT {schema_madlib}.mlp_predict('example')""".format(**args)
 
-    input_tbl_valid(data_table, 'MLP')
+    usage = """
+    ---------------------------------------------------------------------------
+                                    USAGE
+    ---------------------------------------------------------------------------
+    SELECT {schema_madlib}.mlp_predict(
+        model_table,        -- name of model table
+        data_table,         -- name of data table
+        id_col_name,        -- id column for data table
+        output_table,       -- name of output table
+        pred_type,          -- the type of output required:
+                               'response' gives the actual prediction,
+                               'prob' gives the probability of each class.
+                               for regression, only type='response' is defined.
+    );
 
-    _assert(is_var_valid(data_table, independent_varname),
-            "MLP Error: independent_varname ('{0}') is invalid for data_table ({1})".
-            format(independent_varname, data_table))
-    _assert(id_col_name is not None, "MLP Error: id_col_name is NULL")
-    _assert(is_var_valid(data_table, id_col_name),
-            "MLP Error: id_col_name ('{0}') is invalid for {1}".
-            format(id_col_name, data_table))
-    output_tbl_valid(output_table, 'MLP')
-    # optimizer_param_dict = _get_optimizer_params(optimizer_params)
 
-    with MinWarning("warning"):
-        header = "CREATE TABLE " + output_table + " AS "
-        # Regression
-        if not is_classification:
-            sql = header + """
-                SELECT {id_col_name},
-                       {schema_madlib}._predict_mlp_output(
-                            {coeff},
-                            {independent_varname}::DOUBLE PRECISION[],
-                            {is_classification},
-                            {activation_function},
-                            {layer_sizes}
-                        ) as {pred_name}
-                FROM {data_table}
-                """
-        else:
-            # if dep_type.lower() == "boolean":
-            #     # some platforms don't have text to boolean cast. We manually check the string.
-            #     dep_cast_str = ("(case {pred_name} when 'True' then "
-            #                     "True else False end)::BOOLEAN as {pred_name}")
-            # else:
-            #     dep_cast_str = "{pred_name}::{dep_type}"
-            summary_query = """
-            SELECT classes FROM {0}_summary ORDER BY classes
-            """.format(model_table)
-            classes = plpy.execute(summary_query)[0]['classes']
-            if pred_type == "response":
-                # This join is to recover the class name from the summary table, as prediction just returns an index
-                classes_with_index_table = unique_string()
-                classes_table = unique_string()
-                sql = header + """
-                        WITH {classes_with_index_table} AS
-                            (WITH {classes_table} AS
-                                (SELECT UNNEST(classes) AS class FROM {summary_table})
-                            SELECT row_number() OVER (ORDER BY class) AS id,class FROM {classes_table})
-                        SELECT
-                            q.{id_col_name}
-                           ,{classes_with_index_table}.class as {pred_name}
-                        FROM (
-                             SELECT
-                                {id_col_name},
-                                {schema_madlib}._predict_mlp_class(
-                                        {coeff}::DOUBLE PRECISION[],
-                                        {independent_varname}::DOUBLE PRECISION[],
-                                        {is_classification},
-                                        {activation_function},
-                                        {layer_sizes}
-                                        )
-                               as pred_idx
-                            FROM {data_table}
-                        ) q
-                        INNER JOIN {classes_with_index_table}
-                        ON {classes_with_index_table}.id-1=q.pred_idx
-                    """
-            else:
-                # Incomplete
-                intermediate_col = unique_string()
-                score_format = ',\n'.join([
-                    '{interim}[{j}] as "estimated_prob_{c}"'.
-                    format(j=i + 1, c=c.strip(' "'), interim=intermediate_col)
-                        for i, c in enumerate(classes)])
-                sql = header + """
-                    SELECT
-                        {id_col_name},
-                        {score_format}
-                        FROM (
-                            SELECT {id_col_name},
-                                   {schema_madlib}._predict_mlp_output(
-                                       {coeff}::DOUBLE PRECISION[],
-                                       {independent_varname}::DOUBLE PRECISION[],
-                                       {is_classification},
-                                       {activation_function},
-                                       {layer_sizes}
-                                       )::TEXT[]
-                                            AS {intermediate_col}
-                            FROM {data_table}
-                        ) q
-                    """
-#TODO add join for validation
-#  as s {join_str} {model} as m {using_str}
-    sql = sql.format(**locals())
-    with MinWarning('warning'):
-        plpy.execute(sql)
+    ---------------------------------------------------------------------------
+                                    OUTPUT
+    ---------------------------------------------------------------------------
+    The model table produced by mlp contains the following columns:
 
-    pass
-# ----------------------------------------------------------------------
+    id                      -- The provided id for the given input vector
+
+    estimated_<COL_NAME>    -- (For pred_type='response') The estimated class
+                               for classification or value for regression, where
+                               <COL_NAME> is the name of the column to be
+                               predicted from training data
+
+    prob_<CLASS>           -- (For pred_type='prob' for classification) The
+                              probability of a given class <CLASS> as given by
+                              softmax. There will be one column for each class
+                              in the training data.
+
+    """.format(**args)
+
+    example = """
+    -- See {schema_madlib}.mlp_classification('example') for test
+    -- and model tables
+
+    -- Predict classes using
+    SELECT mlp_predict(
+        'mlp_model',         -- Model table
+        'iris_data',         -- Test data table
+        'id',                -- Id column in test table
+        'mlp_prediction',    -- Output table for predictions
+        'response'           -- Output classes, not probabilities
+    );
+
+    SELECT * FROM mlp_prediction;
+    """.format(**args)
+
+    if not message:
+        return summary
+    elif message.lower() in ('usage', 'help', '?'):
+        return usage
+    elif message.lower() == 'example':
+        return example
+    else:
+        return """
+            No such option. Use "SELECT {schema_madlib}.mlp_predict()" for help.
+        """.format(**args)

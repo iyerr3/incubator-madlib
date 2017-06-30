@@ -36,9 +36,9 @@ DECLARE_UDF(convex, internal_mlp_igd_result)
  *      function for regression and classification probability
  */
 
-DECLARE_UDF(convex, _predict_mlp_output)
+DECLARE_UDF(convex, internal_predict_mlp_output)
 /**
  * @brief Multi-layer perceptron (incremental gradient): Predict
  *       function for classification class
  */
-DECLARE_UDF(convex, _predict_mlp_class)
+DECLARE_UDF(convex, internal_predict_mlp_class)

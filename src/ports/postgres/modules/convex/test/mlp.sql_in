@@ -4,7 +4,7 @@
 -- Classification
 
 
-DROP TABLE IF EXISTS iris_data, iris_test, mlp_temp_result CASCADE;
+DROP TABLE IF EXISTS iris_data, iris_test, mlp_class CASCADE;
 CREATE TABLE iris_data(
     id integer,
     attributes numeric[],
@@ -167,7 +167,7 @@ INSERT INTO iris_data VALUES
 
 SELECT mlp_classification(
     'iris_data',      -- Source table
-    'mlp_temp_result',    -- Desination table
+    'mlp_class',    -- Desination table
     'attributes',     -- Input features
     'class',   -- Label
     ARRAY[5],     -- Number of units per layer
@@ -181,12 +181,31 @@ SELECT assert(
     -- Loss will improve much more if more iterations are run
     loss < 30,
     'MLP: Loss is too high (> 0.1). Wrong result.'
-) FROM mlp_temp_result;
+) FROM mlp_class;
+
+DROP TABLE IF EXISTS mlp_prediction;
+-- See prediction accuracy for training data
+SELECT mlp_predict(
+    'mlp_class',
+    'iris_data',
+    'id',
+    'mlp_prediction',
+    'response');
+
+SELECT assert(
+    -- Accuracy greater than 90%
+    COUNT(*)/150.0 > 0.90,
+    'MLP: Accuracy too low (< 90%). Wrong result'
+) FROM
+    (SELECT iris_data.class AS actual, mlp_prediction.estimated_class as estimated
+    FROM mlp_prediction INNER JOIN iris_data ON
+    iris_data.id=mlp_prediction.id) q
+WHERE q.actual=q.estimated;
 
 -- Regression
 
 
-DROP TABLE IF EXISTS lin_housing_wi, mlp_regress_temp_result CASCADE;
+DROP TABLE IF EXISTS lin_housing_wi, mlp_regress CASCADE;
 CREATE TABLE lin_housing_wi (id serial, x float8[], grp_by_col int, y float8);
 COPY lin_housing_wi (x, grp_by_col, y) FROM STDIN NULL '?' DELIMITER '|';
 {1,0.00632,18.00,2.310,0,0.5380,6.5750,65.20,4.0900,1,296.0,15.30,396.90,4.98} | 1 | 24.00
@@ -734,6 +753,7 @@ x[13]= x[13]/(SELECT m13 from maxs),
 x[14]= x[14]/(SELECT m14 from maxs);
 
 DROP TABLE IF EXISTS maxs;
+DROP TABLE IF EXISTS mlp_regress;
 
 
 -- Convergence varies for regression
@@ -741,7 +761,7 @@ DROP TABLE IF EXISTS maxs;
 SELECT setseed(0);
 SELECT mlp_regression(
     'lin_housing_wi',           -- Source table
-    'mlp_regress_temp_result',  -- Desination table
+    'mlp_regress',  -- Desination table
     'x',                        -- Input features
     'y',                        -- Dependent variable
     ARRAY[5,5],            -- Number of units per layer
@@ -754,4 +774,4 @@ SELECT mlp_regression(
 SELECT assert(
     loss < 5000, -- Corresponds to RMSE of sqrt(5000/506) = 3.14.
     'MLP: Loss is too high (> 0.1). Wrong result.'
-) FROM mlp_regress_temp_result;
+) FROM mlp_regress;

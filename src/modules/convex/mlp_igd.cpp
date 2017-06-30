@@ -213,8 +213,8 @@ internal_mlp_igd_result::run(AnyType &args) {
     return tuple;
 }
 
-AnyType
-_predict_mlp_output::run(AnyType &args) {
+void
+internal_initialize_model(AnyType &args, MLPModel<MutableArrayHandle<double> > &model, MappedColumnVector &indVar) {
     MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
     MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
     // Input layer doesn't count
@@ -223,46 +223,36 @@ _predict_mlp_output::run(AnyType &args) {
     double is_classification = args[2].getAs<double>();
     double activation = args[3].getAs<double>();
 
-    MLPModel<MutableArrayHandle<double> > model;
     model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
 
+    MappedColumnVector x = args[1].getAs<MappedColumnVector>();
+    // x is a const reference, we can only rebind to change its pointer
+    indVar.rebind(x.memoryHandle(), x.size());
+}
+
+// #TODO switch to internal
+AnyType
+internal_predict_mlp_output::run(AnyType &args) {
+    MLPModel<MutableArrayHandle<double> > model;
     MappedColumnVector indVar;
     try {
-        // an exception is raised in the backend if args[2] contains nulls
-        MappedColumnVector x = args[1].getAs<MappedColumnVector>();
-        // x is a const reference, we can only rebind to change its pointer
-        indVar.rebind(x.memoryHandle(), x.size());
+        internal_initialize_model(args,model,indVar);
     } catch (const ArrayWithNullException &e) {
         return args[0];
     }
-
     ColumnVector prediction = MLPTask::predict(model, indVar);
     return prediction;
 }
 
 AnyType
-_predict_mlp_class::run(AnyType &args) {
-    MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
-    MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
-    // Input layer doesn't count
-    size_t numberOfStages = layerSizes.size()-1;
-    //#TODO this should be an int not a double
-    double is_classification = args[2].getAs<double>();
-    double activation = args[3].getAs<double>();
-
+internal_predict_mlp_class::run(AnyType &args) {
     MLPModel<MutableArrayHandle<double> > model;
-    model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
-
     MappedColumnVector indVar;
     try {
-        // an exception is raised in the backend if args[2] contains nulls
-        MappedColumnVector x = args[1].getAs<MappedColumnVector>();
-        // x is a const reference, we can only rebind to change its pointer
-        indVar.rebind(x.memoryHandle(), x.size());
+        internal_initialize_model(args,model,indVar);
     } catch (const ArrayWithNullException &e) {
         return args[0];
     }
-
     int prediction = MLPTask::predictClass(model, indVar);
     return prediction;
 }
