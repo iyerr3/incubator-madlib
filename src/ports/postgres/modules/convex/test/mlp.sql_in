@@ -4,7 +4,7 @@
 -- Classification
 
 
-DROP TABLE IF EXISTS iris_data, iris_test, mlp_class CASCADE;
+DROP TABLE IF EXISTS iris_data, iris_test, mlp_class, mlp_class_summary CASCADE;
 CREATE TABLE iris_data(
     id integer,
     attributes numeric[],

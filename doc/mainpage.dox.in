@@ -192,6 +192,9 @@ complete matrix stored as a distributed table.
         @defgroup grp_robust Robust Variance
     @}
 
+    @defgroup grp_mlp Multilayer Perceptron
+    @ingroup grp_super
+
     @defgroup grp_svm Support Vector Machines
     @ingroup grp_super
 

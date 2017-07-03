@@ -134,7 +134,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
         # TODO validation for summary
         summary_table_creation_query = """
             CREATE TABLE {output_table}_summary
-            (independent_varname TEXT,
+            (source_table TEXT,
+            independent_varname TEXT,
             dependent_varname TEXT,
             tolerance FLOAT,
             step_size FLOAT,
@@ -148,7 +149,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
 
         summary_table_update_query = """
             INSERT INTO {output_table}_summary VALUES
-            ('{independent_varname}',
+            ('{source_table}',
+            '{independent_varname}',
             '{original_dependent_varname}',
             {tolerance},
             {step_size},
@@ -356,19 +358,17 @@ def mlp_predict(schema_madlib, model_table, data_table,
                       ['dependent_varname', 'independent_varname',
                        'activation_function',
                        'tolerance', 'step_size','n_iterations',
-                       'n_tries','classes', 'layer_sizes'],
+                       'n_tries','classes', 'layer_sizes','source_table'],
                       'MLP')
 
-# TODO validation for summary
     # read necessary info from summary
     summary = plpy.execute("SELECT * FROM {0}".format(summary_table))[0]
     coeff = py_list_to_sql_string(plpy.execute("SELECT * FROM {0}".format(model_table))[0]["coeff"])
     dependent_varname = summary['dependent_varname']
     independent_varname = summary['independent_varname']
+    source_table = summary['source_table']
     activation_function = _get_activation_index(summary['activation_function'])
     layer_sizes = py_list_to_sql_string(summary['layer_sizes'],array_type="INTEGER")
-    # coeff = py_list_to_sql_string(summary['coeff'],array_type="double precision")
-    # optimizer_params = summary['optimizer_params']
     is_classification = int(summary["is_classification"])
 
     pred_name = ('"prob_{0}"' if pred_type == "prob" else
@@ -390,15 +390,21 @@ def mlp_predict(schema_madlib, model_table, data_table,
         header = "CREATE TABLE " + output_table + " AS "
         # Regression
         if not is_classification:
+            dependent_type = get_expr_type(dependent_varname, source_table)
+            unnest_if_not_array = ""
+            # Return the same type as the user provided.  Internally we always use an array, but
+            # if they provided a scaler, unnest it for the user
+            if("[]" not in dependent_type):
+                unnest_if_not_array = "UNNEST"
             sql = header + """
                 SELECT {id_col_name},
-                       {schema_madlib}.internal_predict_mlp_output(
+                       {unnest_if_not_array}({schema_madlib}.internal_predict_mlp_output(
                             {coeff},
                             {independent_varname}::DOUBLE PRECISION[],
                             {is_classification},
                             {activation_function},
                             {layer_sizes}
-                        ) as {pred_name}
+                        )) as {pred_name}
                 FROM {data_table}
                 """
         else:
