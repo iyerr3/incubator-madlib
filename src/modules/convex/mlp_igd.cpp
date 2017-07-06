@@ -176,10 +176,13 @@ mlp_igd_final::run(AnyType &args) {
     // finalizing
     MLPIGDAlgorithm::final(state);
 
+    // Return the mean loss
+    state.algo.loss = state.algo.loss/static_cast<double>(state.algo.numRows);
+
     // for stepsize tuning
     std::stringstream debug;
     debug << "loss: " << state.algo.loss;
-    warning(debug.str());
+    //warning(debug.str());
     return state;
 }
 
@@ -213,29 +216,43 @@ internal_mlp_igd_result::run(AnyType &args) {
     return tuple;
 }
 
-void
-internal_initialize_model(AnyType &args, MLPModel<MutableArrayHandle<double> > &model, MappedColumnVector &indVar) {
-    MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
-    MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
-    // Input layer doesn't count
-    size_t numberOfStages = layerSizes.size()-1;
-    //#TODO this should be an int not a double
-    double is_classification = args[2].getAs<double>();
-    double activation = args[3].getAs<double>();
+//void
+//internal_initialize_model(AnyType &args, MLPModel<MutableArrayHandle<double> > &model, MappedColumnVector &indVar) {
+    //MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
+    //MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
+    //// Input layer doesn't count
+    //size_t numberOfStages = layerSizes.size()-1;
+    ////#TODO this should be an int not a double
+    //double is_classification = args[2].getAs<double>();
+    //double activation = args[3].getAs<double>();
 
-    model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+    //model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+    //elog(INFO,"is_classification rebind :%f",(double)model.is_classification);
+    //elog(INFO,"activation rebind:%f",(double)model.activation);
 
-    MappedColumnVector x = args[1].getAs<MappedColumnVector>();
-    // x is a const reference, we can only rebind to change its pointer
-    indVar.rebind(x.memoryHandle(), x.size());
-}
+    //MappedColumnVector x = args[1].getAs<MappedColumnVector>();
+    //// x is a const reference, we can only rebind to change its pointer
+    //indVar.rebind(x.memoryHandle(), x.size());
+//}
 
 AnyType
 internal_predict_mlp_output::run(AnyType &args) {
     MLPModel<MutableArrayHandle<double> > model;
     MappedColumnVector indVar;
     try {
-        internal_initialize_model(args,model,indVar);
+        MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
+        MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
+        // Input layer doesn't count
+        size_t numberOfStages = layerSizes.size()-1;
+        //#TODO this should be an int not a double
+        double is_classification = args[2].getAs<double>();
+        double activation = args[3].getAs<double>();
+
+        model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+
+        MappedColumnVector x = args[1].getAs<MappedColumnVector>();
+        // x is a const reference, we can only rebind to change its pointer
+        indVar.rebind(x.memoryHandle(), x.size());
     } catch (const ArrayWithNullException &e) {
         return args[0];
     }
@@ -248,7 +265,19 @@ internal_predict_mlp_class::run(AnyType &args) {
     MLPModel<MutableArrayHandle<double> > model;
     MappedColumnVector indVar;
     try {
-        internal_initialize_model(args,model,indVar);
+        MappedColumnVector coeff = args[0].getAs<MappedColumnVector>();
+        MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
+        // Input layer doesn't count
+        size_t numberOfStages = layerSizes.size()-1;
+        //#TODO this should be an int not a double
+        double is_classification = args[2].getAs<double>();
+        double activation = args[3].getAs<double>();
+
+        model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+
+        MappedColumnVector x = args[1].getAs<MappedColumnVector>();
+        // x is a const reference, we can only rebind to change its pointer
+        indVar.rebind(x.memoryHandle(), x.size());
     } catch (const ArrayWithNullException &e) {
         return args[0];
     }

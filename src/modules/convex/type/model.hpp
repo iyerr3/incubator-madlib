@@ -176,8 +176,7 @@ struct MLPModel {
 
         is_classification.rebind(is_classification_in);
         activation.rebind(activation_in);
-        //is_classification = is_classification_in;
-        //activation = activation_in;
+
         uint32_t sizeOfU = 0;  // starts from 2 since is_classification is at 0 and activation is at 1
         u.clear();
         for (k = 1; k <= N; k ++) {
@@ -228,6 +227,8 @@ struct MLPModel {
         for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
             u[k-1] = inOtherModel.u[k-1];
         }
+        is_classification = inOtherModel.is_classification;
+        activation = inOtherModel.activation;
 
         return *this;
     }

@@ -10,8 +10,6 @@
 #ifndef MADLIB_MODULES_CONVEX_TASK_MLP_HPP_
 #define MADLIB_MODULES_CONVEX_TASK_MLP_HPP_
 
-//#include "modules/convex/task/mlp_utils.cpp"
-
 namespace madlib {
 
 namespace modules {
@@ -161,6 +159,8 @@ MLP<Model, Tuple>::loss(
         if(model.is_classification){
             // Cross entropy: RHS term is negative
             loss -= z(j-1)*std::log(x.back()(j)) + (1-z(j-1))*std::log(1-x.back()(j));
+            // Computed like https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/neural_network/_base.py#L222
+            //loss -= z(j-1)*std::log(x.back()(j));
         }else{
             double diff = x.back()(j) - z(j-1);
             loss += diff * diff;
@@ -168,6 +168,9 @@ MLP<Model, Tuple>::loss(
     }
     if(!model.is_classification){
         loss /= 2.;
+    }else{
+        // Give the average
+        loss /= z.rows();
     }
     return loss;
 }
@@ -183,6 +186,7 @@ MLP<Model, Tuple>::predict(
     std::vector<ColumnVector> x;
 
     feedForward(model, y, net, x);
+    // Don't return the offset
     return x.back().tail(x.back().size()-1);
 }
 
@@ -197,6 +201,7 @@ MLP<Model, Tuple>::predictClass(
     std::vector<ColumnVector> x;
 
     feedForward(model, y, net, x);
+    // Don't return the offset
     ColumnVector output = x.back().tail(x.back().size()-1);
     int max_idx;
     output.maxCoeff(&max_idx);

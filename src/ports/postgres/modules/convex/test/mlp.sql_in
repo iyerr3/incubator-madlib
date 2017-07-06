@@ -4,6 +4,7 @@
 -- Classification
 
 
+SELECT setseed(0.5);
 DROP TABLE IF EXISTS iris_data, iris_test, mlp_class, mlp_class_summary CASCADE;
 CREATE TABLE iris_data(
     id integer,
@@ -180,7 +181,7 @@ SELECT mlp_classification(
 SELECT assert(
     -- Loss will improve much more if more iterations are run
     loss < 30,
-    'MLP: Loss is too high (> 0.1). Wrong result.'
+    'MLP: Loss is too high (> 30). Wrong result.'
 ) FROM mlp_class;
 
 DROP TABLE IF EXISTS mlp_prediction;
@@ -194,8 +195,8 @@ SELECT mlp_predict(
 
 SELECT assert(
     -- Accuracy greater than 90%
-    COUNT(*)/150.0 > 0.90,
-    'MLP: Accuracy too low (< 90%). Wrong result'
+    COUNT(*)/150.0 > 0.95,
+    'MLP: Accuracy is too low (> 95%). Wrong result.'
 ) FROM
     (SELECT iris_data.class AS actual, mlp_prediction.estimated_class as estimated
     FROM mlp_prediction INNER JOIN iris_data ON

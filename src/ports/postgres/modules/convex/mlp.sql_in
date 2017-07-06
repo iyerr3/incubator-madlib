@@ -564,8 +564,7 @@ LANGUAGE C IMMUTABLE STRICT;
 
 /**
  * @internal
- * @brief Perform one iteration of the incremental gradient
- *        method for computing low-rank matrix factorization
+ * @brief Perform one iteration of backprop
  */
 CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
         /* start_vec*/        DOUBLE PRECISION[],
@@ -579,7 +578,7 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
     SFUNC=MADLIB_SCHEMA.mlp_igd_transition,
     m4_ifdef(`GREENPLUM',`prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
     FINALFUNC=MADLIB_SCHEMA.mlp_igd_final,
-    INITCOND='{0,0,0,0,0,0,0,0,0,0}'
+    INITCOND='{0,0,0,0,0,0,0,0}'
 );
 -------------------------------------------------------------------------
 

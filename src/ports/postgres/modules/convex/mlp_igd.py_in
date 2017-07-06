@@ -126,7 +126,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                     current_iteration > n_iterations):
                 break
             prev_state = curr_state
-            plpy.info("Iteration: "+str(current_iteration)+"/"+str(n_iterations))
+            # plpy.info("Iteration: "+str(current_iteration)+"/"+str(n_iterations))
             current_iteration += 1
         _build_model_table(schema_madlib, output_table, curr_state, n_iterations)
         layer_sizes_str=py_list_to_sql_string(layer_sizes, array_type="integer")
@@ -423,30 +423,6 @@ def mlp_predict(schema_madlib, model_table, data_table,
                 classes_with_index_table = unique_string()
                 classes_table = unique_string()
                 sql = header + """
-                        WITH {classes_with_index_table} AS
-                            (WITH {classes_table} AS
-                                (SELECT UNNEST(classes) AS class FROM {summary_table})
-                            SELECT row_number() OVER (ORDER BY class) AS id,class FROM {classes_table})
-                        SELECT
-                            q.{id_col_name}
-                           ,{classes_with_index_table}.class as {pred_name}
-                        FROM (
-                             SELECT
-                                {id_col_name},
-                                {schema_madlib}.internal_predict_mlp_class(
-                                        {coeff}::DOUBLE PRECISION[],
-                                        {independent_varname}::DOUBLE PRECISION[],
-                                        {is_classification},
-                                        {activation_function},
-                                        {layer_sizes}
-                                        )
-                               as pred_idx
-                            FROM {data_table}
-                        ) q
-                        INNER JOIN {classes_with_index_table}
-                        ON {classes_with_index_table}.id-1=q.pred_idx
-                    """
-                sql = header + """
                         SELECT
                             q.{id_col_name}
                            ,(ARRAY{classes})[pred_idx+1] as {pred_name}
@@ -477,7 +453,7 @@ def mlp_predict(schema_madlib, model_table, data_table,
                         {score_format}
                         FROM (
                             SELECT {id_col_name},
-                                   {schema_madlib}._predict_mlp_output(
+                                   {schema_madlib}.internal_predict_mlp_output(
                                        {coeff}::DOUBLE PRECISION[],
                                        {independent_varname}::DOUBLE PRECISION[],
                                        {is_classification},
