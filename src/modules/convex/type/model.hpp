@@ -101,8 +101,8 @@ typedef HandleTraits<MutableArrayHandle<double> >::ColumnVectorTransparentHandle
 // have a type that they can template over
 template <class Handle>
 struct MLPModel {
-    typename HandleTraits<Handle>::ReferenceToUInt16 is_classification;
-    typename HandleTraits<Handle>::ReferenceToUInt16 activation;
+    uint16_t is_classification;
+    uint16_t activation;
     std::vector<Eigen::Map<Matrix > > u;
 
     /**
@@ -131,7 +131,8 @@ struct MLPModel {
     /**
      * @brief Initialize the model randomly
      */
-    void initialize(int is_classification_in, int activation_in) {
+    void initialize(const uint16_t is_classification_in,
+                    const uint16_t activation_in) {
         is_classification = is_classification_in;
         activation = activation_in;
         // using madlib::dbconnector::$database::NativeRandomNumberGenerator
@@ -168,16 +169,19 @@ struct MLPModel {
         }
     }
 
-    uint32_t rebind(const double *is_classification_in, const double *activation_in, const double *data, const uint16_t &inNumberOfStages,
+    uint32_t rebind(const uint16_t &is_classification_in,
+                    const uint16_t &activation_in,
+                    const double * data,
+                    const uint16_t &inNumberOfStages,
                     const int32_t *inNumbersOfUnits) {
         size_t N = inNumberOfStages;
         const int32_t *n = inNumbersOfUnits;
         size_t k;
 
-        is_classification.rebind(is_classification_in);
-        activation.rebind(activation_in);
+        is_classification = is_classification_in;
+        activation = activation_in;
 
-        uint32_t sizeOfU = 0;  // starts from 2 since is_classification is at 0 and activation is at 1
+        uint32_t sizeOfU = 0;
         u.clear();
         for (k = 1; k <= N; k ++) {
             u.push_back(Eigen::Map<Matrix >(
@@ -185,7 +189,6 @@ struct MLPModel {
                     n[k-1] + 1, n[k] + 1));
             sizeOfU += (n[k-1] + 1) * (n[k] + 1);
         }
-
         return sizeOfU;
     }
 

@@ -85,7 +85,7 @@ mlp_igd_transition::run(AnyType &args) {
 
 
             int activation = args[6].getAs<int>();
-            if (!( activation  == 0) &&  !( activation  == 1) && !(activation==2)) {
+            if (!( activation  == 0) &&  !( activation  == 1) && !(activation == 2)) {
                 throw std::runtime_error("Invalid parameter: activation should be 0, 1 or 2");
             }
 
@@ -206,13 +206,14 @@ internal_mlp_igd_result::run(AnyType &args) {
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap
         flattenU;
     flattenU.rebind(&state.task.model.u[0](0, 0),
-            state.task.model.arraySize(state.task.numberOfStages,
-                    state.task.numbersOfUnits)-2); // -2 for is_classification and activation
+                    state.task.model.arraySize(state.task.numberOfStages,
+                                               state.task.numbersOfUnits) - 2);
+                    // -2 for is_classification and activation
     double loss = state.algo.loss;
 
-
     AnyType tuple;
-    tuple << flattenU << loss;
+    tuple << flattenU
+          << loss;
     return tuple;
 }
 
@@ -235,6 +236,7 @@ internal_mlp_igd_result::run(AnyType &args) {
     //indVar.rebind(x.memoryHandle(), x.size());
 //}
 
+
 AnyType
 internal_predict_mlp_output::run(AnyType &args) {
     MLPModel<MutableArrayHandle<double> > model;
@@ -244,11 +246,12 @@ internal_predict_mlp_output::run(AnyType &args) {
         MappedIntegerVector layerSizes = args[4].getAs<MappedIntegerVector>();
         // Input layer doesn't count
         size_t numberOfStages = layerSizes.size()-1;
-        //#TODO this should be an int not a double
-        double is_classification = args[2].getAs<double>();
-        double activation = args[3].getAs<double>();
 
-        model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+        uint16_t is_classification = args[2].getAs<uint16_t>();
+        uint16_t activation = args[3].getAs<uint16_t>();
+
+        model.rebind(is_classification, activation, &coeff.data()[0],
+                     numberOfStages, &layerSizes.data()[0]);
 
         MappedColumnVector x = args[1].getAs<MappedColumnVector>();
         // x is a const reference, we can only rebind to change its pointer
@@ -273,7 +276,8 @@ internal_predict_mlp_class::run(AnyType &args) {
         double is_classification = args[2].getAs<double>();
         double activation = args[3].getAs<double>();
 
-        model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+        model.rebind(is_classification, activation, &coeff.data()[0],
+                     numberOfStages, &layerSizes.data()[0]);
 
         MappedColumnVector x = args[1].getAs<MappedColumnVector>();
         // x is a const reference, we can only rebind to change its pointer

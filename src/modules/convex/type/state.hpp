@@ -586,7 +586,7 @@ public:
                 dbal::DoZero, dbal::ThrowBadAlloc>(
                         arraySize(inNumberOfStages, inNumbersOfUnits));
 
-        // This rebind is totally for the following lines of code to take
+        // This rebind is for the following lines of code to take
         // effect. I can also do something like "mStorage[0] = N",
         // but I am not clear about the type binding/alignment
         rebind();
@@ -645,7 +645,7 @@ private:
      * - 0: numberOfStages (number of stages (layers), design doc: N)
      * - 1: numbersOfUnits (numbers of activation units, design doc: n_0,...,n_N)
      * - N + 2: stepsize (step size of gradient steps)
-     * - N + 3: is_classification (do classification)
+     * - N + 3: is_classification (classification or regression)
      * - N + 4: activation (activation function)
      * - N + 5: coeff (coefficients, design doc: u)
      *
@@ -663,14 +663,20 @@ private:
         task.numbersOfUnits =
             reinterpret_cast<dimension_pointer_type>(&mStorage[1]);
         task.stepsize.rebind(&mStorage[N + 2]);
-        uint32_t sizeOfModel = task.model.rebind(&mStorage[N + 3],&mStorage[N + 4],&mStorage[N + 5],
-                task.numberOfStages, task.numbersOfUnits);
+        uint32_t sizeOfModel = task.model.rebind(
+            static_cast<uint16_t>(mStorage[N + 3]),
+            static_cast<uint16_t>(mStorage[N + 4]),
+            &mStorage[N + 5],
+            task.numberOfStages,
+            task.numbersOfUnits);
 
         algo.numRows.rebind(&mStorage[N + 5 + sizeOfModel]);
         algo.loss.rebind(&mStorage[N + 6 + sizeOfModel]);
-        algo.incrModel.rebind(&mStorage[N + 3],&mStorage[N + 4],&mStorage[N + 7 + sizeOfModel],
-                task.numberOfStages, task.numbersOfUnits);
-
+        algo.incrModel.rebind(static_cast<uint16_t>(mStorage[N + 7 + sizeOfModel]),
+                              static_cast<uint16_t>(mStorage[N + 8 + sizeOfModel]),
+                              &mStorage[N + 9 + sizeOfModel],
+                              task.numberOfStages,
+                              task.numbersOfUnits);
     }
 
     Handle mStorage;
@@ -685,8 +691,6 @@ public:
         dimension_type numberOfStages;
         dimension_pointer_type numbersOfUnits;
         numeric_type stepsize;
-        //dimension_type is_classification;
-        //dimension_type activation;
         MLPModel<Handle> model;
     } task;
 
