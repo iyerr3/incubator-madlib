@@ -34,7 +34,9 @@ public:
     typedef typename Task::model_type model_type;
 
     static void transition(state_type &state, const tuple_type &tuple);
+    static void transitionInMiniBatch(state_type &state, const tuple_type &tuple);
     static void merge(state_type &state, const_state_type &otherState);
+    static void mergeInPlace(state_type &state, const_state_type &otherState);
     static void final(state_type &state);
 };
 
@@ -55,6 +57,58 @@ IGD<State, ConstState, Task>::transition(state_type &state,
             tuple.depVar,
             state.task.stepsize * tuple.weight);
 }
+
+/**
+  * @brief Update the transition state in mini-batches
+  *
+  * Note: We assume that
+  *     1. Task defines a model_eigen_type
+  *     2. A batch of tuple.indVar is a Matrix
+  *     3. A batch of tuple.depVar is a ColumnVector
+  *     4. Task defines a lossAndGradient method
+  *
+ */
+ template <class State, class ConstState, class Task>
+ void
+ IGD<State, ConstState, Task>::transitionInMiniBatch(state_type &state,
+         const tuple_type &tuple) {
+
+     typedef typename Task::model_eigen_type model_eigen_type;
+
+     int batch_size = state.algo.batchSize;
+     int n_epochs = state.algo.nEpochs;
+     int N = tuple.indVar.rows();
+     int d = tuple.indVar.cols();
+     int n_batches = N < batch_size ? 1 : N / batch_size + int(N%batch_size > 0);
+
+     // elog(INFO, "Number of items = %d, batch_size = %d, Number of batches = %d\n", N, batch_size, n_batches);
+
+     model_eigen_type gradient(state.task.model);
+     double avg_loss = 0.0;
+     for (int i=0; i < n_epochs; i++) {
+         double loss = 0.0;
+         for (int j=0, k=0; j < n_batches; j++, k += batch_size) {
+             Matrix X_batch;
+             ColumnVector y_batch;
+             if (j == n_batches-1) {
+                // last batch
+                X_batch = tuple.indVar.bottomRows(N-k);
+                y_batch = tuple.depVar.tail(N-k);
+             } else {
+                 X_batch = tuple.indVar.block(k, 0, batch_size, d);
+                 y_batch = tuple.depVar.segment(k, batch_size);
+             }
+             loss += Task::lossAndGradient(state.task.model, X_batch, y_batch, gradient);
+             state.task.model -= state.task.stepsize * (gradient + state.task.reg * state.task.model);
+         }
+         loss /= n_batches;
+         elog(NOTICE, "Epoch %d, loss = %e\n", i, loss);
+         // return average loss for the first epoch
+         if (i==0) state.algo.loss += loss;
+     }
+     return;
+ }
+
 
 template <class State, class ConstState, class Task>
 void
@@ -81,6 +135,27 @@ IGD<State, ConstState, Task>::merge(state_type &state,
         static_cast<double>(otherState.algo.numRows);
     state.algo.incrModel += otherState.algo.incrModel;
     state.algo.incrModel *= static_cast<double>(otherState.algo.numRows) /
+        static_cast<double>(totalNumRows);
+}
+
+template <class State, class ConstState, class Task>
+void
+IGD<State, ConstState, Task>::mergeInPlace(state_type &state,
+        const_state_type &otherState) {
+    // avoid division by zero
+    if (state.algo.numRows == 0) {
+        state.task.model= otherState.task.model;
+        return;
+    } else if (otherState.algo.numRows == 0) {
+        return;
+    }
+
+    // model averaging, weighted by rows seen
+    double totalNumRows = static_cast<double>(state.algo.numRows + otherState.algo.numRows);
+    state.task.model*= static_cast<double>(state.algo.numRows) /
+        static_cast<double>(otherState.algo.numRows);
+    state.task.model+= otherState.task.model;
+    state.task.model*= static_cast<double>(otherState.algo.numRows) /
         static_cast<double>(totalNumRows);
 }
 
