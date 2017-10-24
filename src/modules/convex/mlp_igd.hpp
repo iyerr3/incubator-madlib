@@ -25,16 +25,19 @@
  * @brief Multilayer perceptron (incremental gradient): Transition function
  */
 DECLARE_UDF(convex, mlp_igd_transition)
+DECLARE_UDF(convex, mlp_minibatch_transition)
 
 /**
  * @brief Multilayer perceptron (incremental gradient): State merge function
  */
 DECLARE_UDF(convex, mlp_igd_merge)
+DECLARE_UDF(convex, mlp_minibatch_merge)
 
 /**
  * @brief Multilayer perceptron (incremental gradient): Final function
  */
 DECLARE_UDF(convex, mlp_igd_final)
+DECLARE_UDF(convex, mlp_minibatch_final)
 
 /**
  * @brief Multilayer perceptron (incremental gradient): Difference in

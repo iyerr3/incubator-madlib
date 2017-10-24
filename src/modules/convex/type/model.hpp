@@ -154,7 +154,7 @@ struct MLPModel {
         double norm = 0.;
         size_t k;
         for (k = 0; k < u.size(); k ++) {
-            norm+=u[k].bottomRows(u[k].rows()-1).squaredNorm();
+            norm += u[k].bottomRows(u[k].rows()-1).squaredNorm();
         }
         return std::sqrt(norm);
     }
@@ -169,7 +169,7 @@ struct MLPModel {
     /*
      *  Some operator wrappers for u.
      */
-    MLPModel &operator*=(const double &c) {
+    MLPModel& operator*=(const double &c) {
         // Note that when scaling the model, you should
         // not update the bias.
         size_t k;
@@ -181,7 +181,7 @@ struct MLPModel {
     }
 
     template<class OtherHandle>
-    MLPModel &operator-=(const MLPModel<OtherHandle> &inOtherModel) {
+    MLPModel& operator-=(const MLPModel<OtherHandle> &inOtherModel) {
         size_t k;
         for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
             u[k-1] -= inOtherModel.u[k-1];
@@ -191,7 +191,7 @@ struct MLPModel {
     }
 
     template<class OtherHandle>
-    MLPModel &operator+=(const MLPModel<OtherHandle> &inOtherModel) {
+    MLPModel& operator+=(const MLPModel<OtherHandle> &inOtherModel) {
         size_t k;
         for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
             u[k-1] += inOtherModel.u[k-1];
@@ -201,7 +201,7 @@ struct MLPModel {
     }
 
     template<class OtherHandle>
-    MLPModel &operator=(const MLPModel<OtherHandle> &inOtherModel) {
+    MLPModel& operator=(const MLPModel<OtherHandle> &inOtherModel) {
         size_t k;
         for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
             u[k-1] = inOtherModel.u[k-1];

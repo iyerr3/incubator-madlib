@@ -47,8 +47,14 @@ namespace convex {
 typedef IGD<MLPIGDState<MutableArrayHandle<double> >, MLPIGDState<ArrayHandle<double> >,
         MLP<MLPModel<MutableArrayHandle<double> >, MLPTuple > > MLPIGDAlgorithm;
 
+typedef IGD<MLPMiniBatchState<MutableArrayHandle<double> >, MLPMiniBatchState<ArrayHandle<double> >,
+        MLP<MLPModel<MutableArrayHandle<double> >, MLPTuple > > MLPMiniBatchAlgorithm;
+
 typedef Loss<MLPIGDState<MutableArrayHandle<double> >, MLPIGDState<ArrayHandle<double> >,
         MLP<MLPModel<MutableArrayHandle<double> >, MLPTuple > > MLPLossAlgorithm;
+
+typedef Loss<MLPMiniBatchState<MutableArrayHandle<double> >, MLPMiniBatchState<ArrayHandle<double> >,
+        MLP<MLPModel<MutableArrayHandle<double> >, MLPTuple > > MLPLossMiniBatchAlgorithm;
 
 typedef MLP<MLPModel<MutableArrayHandle<double> >,MLPTuple> MLPTask;
 
@@ -133,6 +139,90 @@ mlp_igd_transition::run(AnyType &args) {
 
     return state;
 }
+/**
+ * @brief Perform the multilayer perceptron transition step
+ *
+ * Called for each tuple.
+ */
+AnyType
+mlp_minibatch_transition::run(AnyType &args) {
+    // For the first tuple: args[0] is nothing more than a marker that
+    // indicates that we should do some initial operations.
+    // For other tuples: args[0] holds the computation state until last tuple
+    MLPMiniBatchState<MutableArrayHandle<double> > state = args[0];
+
+
+    // initilize the state if first tuple
+    if (state.algo.numRows == 0) {
+        if (!args[3].isNull()) {
+            MLPMiniBatchState<ArrayHandle<double> > previousState = args[3];
+
+            state.allocate(*this, previousState.task.numberOfStages,
+                           previousState.task.numbersOfUnits);
+            state = previousState;
+        } else {
+            // configuration parameters
+            ArrayHandle<double> numbersOfUnits = args[4].getAs<ArrayHandle<double> >();
+            int numberOfStages = numbersOfUnits.size() - 1;
+
+            double stepsize = args[5].getAs<double>();
+
+            state.allocate(*this, numberOfStages,
+                           reinterpret_cast<const double *>(numbersOfUnits.ptr()));
+            state.task.stepsize = stepsize;
+
+
+            const int activation = args[6].getAs<int>();
+            const int is_classification = args[7].getAs<int>();
+
+            const bool warm_start = args[9].getAs<bool>();
+            const int n_tuples = args[11].getAs<int>();
+            const double lambda = args[12].getAs<double>();
+            const int batch_size = args[15].getAs<int>();
+            const int n_epochs = args[16].getAs<int>();
+            state.task.lambda = lambda;
+            MLPTask::lambda = lambda;
+            double is_classification_double = (double) is_classification;
+            double activation_double = (double) activation;
+            MappedColumnVector coeff = args[10].getAs<MappedColumnVector>();
+            state.task.model.rebind(&is_classification_double,
+                                    &activation_double,
+                                    &coeff.data()[0],
+                                    numberOfStages,
+                                    &numbersOfUnits[0]);
+        }
+        // resetting in either case
+        state.reset();
+    }
+
+    // meta data
+    const uint16_t N = state.task.numberOfStages;
+    const double *n = state.task.numbersOfUnits;
+
+    MappedColumnVector x_means = args[13].getAs<MappedColumnVector>();
+    MappedColumnVector x_stds = args[14].getAs<MappedColumnVector>();
+
+    // tuple
+    MappedMatrix indVar;
+    MappedColumnVector depVar;
+    try {
+        indVar = (args[1].getAs<MappedMatrix>() - x_means).cwiseQuotient(x_stds);
+        MappedColumnVector y = args[2].getAs<MappedColumnVector>();
+        depVar.rebind(y.memoryHandle(), y.size());
+    } catch (const ArrayWithNullException &e) {
+        return args[0];
+    }
+    MLPTuple tuple;
+    tuple.indVar = indVar;
+    tuple.depVar.rebind(depVar.memoryHandle(), depVar.size());
+    tuple.weight = args[8].getAs<double>();
+
+    MLPMiniBatchAlgorithm::transition(state, tuple);
+    MLPMiniBatchAlgorithm::transition(state, tuple);
+    state.algo.numRows ++;
+
+    return state;
+}
 
 /**
  * @brief Perform the perliminary aggregation function: Merge transition states
@@ -147,6 +237,26 @@ mlp_igd_merge::run(AnyType &args) {
 
     MLPIGDAlgorithm::merge(stateLeft, stateRight);
     MLPLossAlgorithm::merge(stateLeft, stateRight);
+
+    // The following numRows update, cannot be put above, because the model
+    // averaging depends on their original values
+    stateLeft.algo.numRows += stateRight.algo.numRows;
+
+    return stateLeft;
+}
+/**
+ * @brief Perform the perliminary aggregation function: Merge transition states
+ */
+AnyType
+mlp_minibatch_merge::run(AnyType &args) {
+    MLPMiniBatchState<MutableArrayHandle<double> > stateLeft = args[0];
+    MLPMiniBatchState<ArrayHandle<double> > stateRight = args[1];
+
+    if (stateLeft.algo.numRows == 0) { return stateRight; }
+    else if (stateRight.algo.numRows == 0) { return stateLeft; }
+
+    MLPMiniBatchAlgorithm::merge(stateLeft, stateRight);
+    MLPMiniBatchAlgorithm::merge(stateLeft, stateRight);
 
     // The following numRows update, cannot be put above, because the model
     // averaging depends on their original values
@@ -170,6 +280,29 @@ mlp_igd_final::run(AnyType &args) {
     state.algo.loss = state.algo.loss/static_cast<double>(state.algo.numRows);
     state.algo.loss += L2<MLPModelType>::loss(state.task.model);
     MLPIGDAlgorithm::final(state);
+
+    AnyType tuple;
+    tuple << state
+          << (double)state.algo.loss;
+    return tuple;
+}
+
+
+/**
+ * @brief Perform the multilayer perceptron final step
+ */
+AnyType
+mlp_minibatch_final::run(AnyType &args) {
+    // We request a mutable object. Depending on the backend, this might perform
+    // a deep copy.
+    MLPMiniBatchState<MutableArrayHandle<double> > state = args[0];
+
+    if (state.algo.numRows == 0) { return Null(); }
+
+    L2<MLPModelType>::lambda = state.task.lambda;
+    state.algo.loss = state.algo.loss/static_cast<double>(state.algo.numRows);
+    state.algo.loss += L2<MLPModelType>::loss(state.task.model);
+    MLPMiniBatchAlgorithm::final(state);
 
     AnyType tuple;
     tuple << state

@@ -469,9 +469,9 @@ def array_col_dimension(tbl, col):
         plpy.error('Input error: Column name is invalid')
 
     dim = plpy.execute("""
-                           SELECT max(array_upper({col}, 1)) AS dim
-                           FROM {tbl}
-                           """.format(col=col, tbl=tbl))[0]["dim"]
+        SELECT max(array_upper({col}, 1)) AS dim
+        FROM {tbl}
+        """.format(col=col, tbl=tbl))[0]["dim"]
     return dim
 # ------------------------------------------------------------------------
 

@@ -722,6 +722,29 @@ RETURNS DOUBLE PRECISION[]
 AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE;
 
+CREATE FUNCTION MADLIB_SCHEMA.mlp_minibatch_transition(
+        state              DOUBLE PRECISION[],
+        ind_var            DOUBLE PRECISION[],
+        dep_var            DOUBLE PRECISION[],
+        previous_state     DOUBLE PRECISION[],
+        layer_sizes        DOUBLE PRECISION[],
+        learning_rate_init DOUBLE PRECISION,
+        activation         INTEGER,
+        is_classification  INTEGER,
+        weight             DOUBLE PRECISION,
+        warm_start         BOOLEAN,
+        warm_start_coeff   DOUBLE PRECISION[],
+        n_tuples           INTEGER,
+        lambda             DOUBLE PRECISION,
+        x_means            DOUBLE PRECISION[],
+        x_stds             DOUBLE PRECISION[],
+        batch_size         INTEGER,
+        n_epochs           INTEGER
+    )
+RETURNS DOUBLE PRECISION[]
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE;
+
 CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_merge(
         state1 DOUBLE PRECISION[],
         state2 DOUBLE PRECISION[])
@@ -757,6 +780,36 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_igd_step(
         )(
     STYPE=DOUBLE PRECISION[],
     SFUNC=MADLIB_SCHEMA.mlp_igd_transition,
+    m4_ifdef(`__POSTGRESQL__', `', `prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
+    FINALFUNC=MADLIB_SCHEMA.mlp_igd_final,
+    INITCOND='{0,0,0,0,0,0,0,0}'
+);
+-------------------------------------------------------------------------
+
+/**
+ * @internal
+ * @brief Perform one iteration of backprop
+ */
+CREATE AGGREGATE MADLIB_SCHEMA.mlp_minibatch_step(
+        /* ind_var */             DOUBLE PRECISION[],
+        /* dep_var */             DOUBLE PRECISION[],
+        /* previous_state */      DOUBLE PRECISION[],
+        /* layer_sizes */         DOUBLE PRECISION[],
+        /* learning_rate_init */  DOUBLE PRECISION,
+        /* activation */          INTEGER,
+        /* is_classification */   INTEGER,
+        /* weight */              DOUBLE PRECISION,
+        /* warm_start */          BOOLEAN,
+        /* warm_start_coeff */    DOUBLE PRECISION[],
+        /* n_tuples */            INTEGER,
+        /* lambda */              DOUBLE PRECISION,
+        /* x_means */             DOUBLE PRECISION[],
+        /* x_stds */              DOUBLE PRECISION[],
+        /* batch_size */          INTEGER,
+        /* n_epochs */            INTEGER
+        )(
+    STYPE=DOUBLE PRECISION[],
+    SFUNC=MADLIB_SCHEMA.mlp_minibatch_transition,
     m4_ifdef(`__POSTGRESQL__', `', `prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
     FINALFUNC=MADLIB_SCHEMA.mlp_igd_final,
     INITCOND='{0,0,0,0,0,0,0,0}'

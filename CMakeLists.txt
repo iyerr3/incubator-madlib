@@ -69,7 +69,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
     # http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_02_01_01
     # We specify that we are POSIX.1-2001 compliant and XSI-conforming. We only
     # need to specify _XOPEN_SOURCE as _POSIX_C_SOURCE will be set implicitly.
-    set(CMAKE_C_FLAGS "-std=c99 -pedantic -Wall -Wextra -Wno-clobbered -D_XOPEN_SOURCE=600"
+    set(CMAKE_C_FLAGS "-std=c99 -pedantic -Wno-all -Wextra -Wno-clobbered -D_XOPEN_SOURCE=600"
         CACHE STRING
         "Flags used by the compiler during all build types." FORCE)
 
