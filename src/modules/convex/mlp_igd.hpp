@@ -44,12 +44,14 @@ DECLARE_UDF(convex, mlp_minibatch_final)
  *     log-likelihood between two transition states
  */
 DECLARE_UDF(convex, internal_mlp_igd_distance)
+DECLARE_UDF(convex, internal_mlp_minibatch_distance)
 
 /**
  * @brief Multilayer perceptron (incremental gradient): Convert
  *     transition state to result tuple
  */
 DECLARE_UDF(convex, internal_mlp_igd_result)
+DECLARE_UDF(convex, internal_mlp_minibatch_result)
 
 /**
  * @brief Multilayer perceptron (incremental gradient): Predict

@@ -116,7 +116,7 @@ struct MLPModel {
                                      const double *inNumbersOfUnits) {
         // inNumberOfStages == 0 is not an expected value, but
         // it won't cause exception -- returning 0
-        uint32_t size = 0;
+        uint32_t size = 2;  // is_classification, activation
         size_t N = inNumberOfStages;
         const double *n = inNumbersOfUnits;
         size_t k;

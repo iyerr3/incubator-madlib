@@ -711,8 +711,6 @@ public:
             + (inNumberOfStages + 1)    // numbersOfUnits: size is (N + 1)
             + 1                         // stepsize
             + 1                         // lambda
-            + 1                         // is_classification
-            + 1                         // activation
             + sizeOfModel               // model
 
             + 1                         // numRows
@@ -853,14 +851,6 @@ public:
         return *this;
     }
 
-    /**
-     * @brief Reset the intra-iteration fields.
-     */
-    inline void reset() {
-        algo.numRows = 0;
-        algo.loss = 0.;
-    }
-
     static inline uint32_t arraySize(const uint16_t &inNumberOfStages,
                                      const double *inNumbersOfUnits) {
         uint32_t sizeOfModel =
@@ -869,8 +859,6 @@ public:
             + (inNumberOfStages + 1)    // numbersOfUnits: size is (N + 1)
             + 1                         // stepsize
             + 1                         // lambda
-            + 1                         // is_classification
-            + 1                         // activation
             + sizeOfModel               // model
 
             + 1                         // numRows
@@ -911,7 +899,9 @@ private:
         task.stepsize.rebind(&mStorage[N + 2]);
         task.lambda.rebind(&mStorage[N + 3]);
         uint32_t sizeOfModel =
-            task.model.rebind(&mStorage[N + 4],&mStorage[N + 5], &mStorage[N + 6],
+            task.model.rebind(&mStorage[N + 4],
+                              &mStorage[N + 5],
+                              &mStorage[N + 6],
                               task.numberOfStages, task.numbersOfUnits);
         algo.numRows.rebind(&mStorage[N + 6 + sizeOfModel]);
         algo.numBuffers.rebind(&mStorage[N + 7 + sizeOfModel]);

@@ -736,8 +736,6 @@ CREATE FUNCTION MADLIB_SCHEMA.mlp_minibatch_transition(
         warm_start_coeff   DOUBLE PRECISION[],
         n_tuples           INTEGER,
         lambda             DOUBLE PRECISION,
-        x_means            DOUBLE PRECISION[],
-        x_stds             DOUBLE PRECISION[],
         batch_size         INTEGER,
         n_epochs           INTEGER
     )
@@ -753,6 +751,19 @@ AS 'MODULE_PATHNAME'
 LANGUAGE C IMMUTABLE STRICT;
 
 CREATE FUNCTION MADLIB_SCHEMA.mlp_igd_final(
+        state DOUBLE PRECISION[])
+RETURNS MADLIB_SCHEMA.mlp_step_result
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION MADLIB_SCHEMA.mlp_minibatch_merge(
+        state1 DOUBLE PRECISION[],
+        state2 DOUBLE PRECISION[])
+RETURNS DOUBLE PRECISION[]
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+CREATE FUNCTION MADLIB_SCHEMA.mlp_minibatch_final(
         state DOUBLE PRECISION[])
 RETURNS MADLIB_SCHEMA.mlp_step_result
 AS 'MODULE_PATHNAME'
@@ -803,16 +814,14 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_minibatch_step(
         /* warm_start_coeff */    DOUBLE PRECISION[],
         /* n_tuples */            INTEGER,
         /* lambda */              DOUBLE PRECISION,
-        /* x_means */             DOUBLE PRECISION[],
-        /* x_stds */              DOUBLE PRECISION[],
         /* batch_size */          INTEGER,
         /* n_epochs */            INTEGER
         )(
     STYPE=DOUBLE PRECISION[],
     SFUNC=MADLIB_SCHEMA.mlp_minibatch_transition,
     m4_ifdef(`__POSTGRESQL__', `', `prefunc=MADLIB_SCHEMA.mlp_igd_merge,')
-    FINALFUNC=MADLIB_SCHEMA.mlp_igd_final,
-    INITCOND='{0,0,0,0,0,0,0,0}'
+    FINALFUNC=MADLIB_SCHEMA.mlp_minibatch_final,
+    INITCOND='{0,0,0,0,0,0,0,0,0,0,0}'
 );
 -------------------------------------------------------------------------
 
@@ -824,6 +833,12 @@ RETURNS DOUBLE PRECISION AS
 LANGUAGE c IMMUTABLE STRICT;
 
 CREATE FUNCTION MADLIB_SCHEMA.internal_mlp_igd_result(
+    /*+ state */ DOUBLE PRECISION[])
+RETURNS MADLIB_SCHEMA.mlp_result AS
+'MODULE_PATHNAME'
+LANGUAGE c IMMUTABLE STRICT;
+
+CREATE FUNCTION MADLIB_SCHEMA.internal_mlp_minibatch_result(
     /*+ state */ DOUBLE PRECISION[])
 RETURNS MADLIB_SCHEMA.mlp_result AS
 'MODULE_PATHNAME'
