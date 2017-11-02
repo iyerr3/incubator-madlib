@@ -269,6 +269,10 @@ mlp_igd_final::run(AnyType &args) {
     state.algo.loss += L2<MLPModelType>::loss(state.task.model);
     MLPIGDAlgorithm::final(state);
 
+std::stringstream err_msg;
+err_msg << state.task.model.u[0].row(0);
+warning(err_msg.str());
+
     AnyType tuple;
     tuple << state
           << (double)state.algo.loss;
@@ -287,6 +291,7 @@ mlp_minibatch_final::run(AnyType &args) {
     // Aggregates that haven't seen any data just return Null.
     if (state.algo.numRows == 0) { return Null(); }
     state.algo.loss = state.algo.loss / state.algo.numBuffers;
+    state.algo.loss += L2<MLPModelType>::loss(state.task.model);
 
     AnyType tuple;
     tuple << state
@@ -322,9 +327,14 @@ internal_mlp_igd_result::run(AnyType &args) {
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap
         flattenU;
     flattenU.rebind(&state.task.model.u[0](0, 0),
-            state.task.model.arraySize(state.task.numberOfStages,
-                    state.task.numbersOfUnits));
+                    state.task.model.arraySize(state.task.numberOfStages,
+                                               state.task.numbersOfUnits));
     double loss = state.algo.loss;
+
+std::stringstream err_msg;
+err_msg << "result func (model): " << state.task.model.u[0].row(0);
+err_msg << "result func (flattenU): " << flattenU;
+warning(err_msg.str());
 
     AnyType tuple;
     tuple << flattenU

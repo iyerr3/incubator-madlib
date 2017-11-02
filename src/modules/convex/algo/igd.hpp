@@ -127,6 +127,7 @@ IGD<State, ConstState, Task>::transition(state_type &state,
  IGD<State, ConstState, Task>::transitionInMiniBatch2(
         state_type &state,
         const tuple_type &tuple) {
+
     int batch_size = state.algo.batchSize;
     int n_epochs = state.algo.nEpochs;
     int N = tuple.indVar.rows();
@@ -201,12 +202,12 @@ IGD<State, ConstState, Task>::mergeInPlace(state_type &state,
     }
 
     // model averaging, weighted by rows seen
-    double totalNumRows = static_cast<double>(state.algo.numRows + otherState.algo.numRows);
-    state.task.model *= static_cast<double>(state.algo.numRows) /
-        static_cast<double>(otherState.algo.numRows);
+    double leftRows = static_cast<double>(state.algo.numRows + state.algo.numBuffers);
+    double rightRows = static_cast<double>(otherState.algo.numRows + otherState.algo.numBuffers);
+    double totalNumRows = leftRows + rightRows;
+    state.task.model *= leftRows / rightRows;
     state.task.model += otherState.task.model;
-    state.task.model *= static_cast<double>(otherState.algo.numRows) /
-        static_cast<double>(totalNumRows);
+    state.task.model *= rightRows / totalNumRows;
 }
 
 template <class State, class ConstState, class Task>

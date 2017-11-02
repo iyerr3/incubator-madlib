@@ -79,8 +79,6 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                    optimizer_params, is_classification, weights,
                    warm_start, activation)
 
-    current_iteration = 1
-    prev_state = None
     tolerance = optimizer_params["tolerance"]
     n_iterations = optimizer_params["n_iterations"]
     step_size_init = optimizer_params["learning_rate_init"]
@@ -112,7 +110,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
     dimension, n_tuples = _tbl_dimension_rownum(
         schema_madlib, source_table, independent_varname)
     if mini_batching_enabled:
-        x_means = x_stds = "ARRAY[]"
+        x_means = PY2SQL([0.0] * dimension)
+        x_stds = PY2SQL([1.0] * dimension)
     else:
         x_scales = __utils_ind_var_scales(
             source_table, independent_varname, dimension, schema_madlib)
@@ -160,6 +159,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
     prev_loss = float('inf')
     loss = None
     for _ in range(n_tries):
+        current_iteration = 1
+        prev_state = None
         if not warm_start:
             coeff = []
             for fan_in, fan_out in zip(layer_sizes, layer_sizes[1:]):
@@ -266,15 +267,12 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             prev_state = curr_state
             prev_loss = loss
             current_iteration += 1
-        # We use previous state because the last iteration
-        # just calculates loss
         if loss < best_loss:
-            best_state = prev_state
+            best_state = curr_state
             best_loss = loss
-        current_iteration = 1
-        prev_state = None
+
     _build_model_table(schema_madlib, output_table, best_state,
-                       best_loss, n_iterations, mini_batching_enabled)
+                       best_loss, current_iteration, mini_batching_enabled)
     layer_sizes_str = PY2SQL(
         layer_sizes, array_type="integer")
     classes_str = PY2SQL(
