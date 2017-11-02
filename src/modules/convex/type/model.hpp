@@ -116,14 +116,14 @@ struct MLPModel {
                                      const double *inNumbersOfUnits) {
         // inNumberOfStages == 0 is not an expected value, but
         // it won't cause exception -- returning 0
-        uint32_t size = 2;  // is_classification, activation
+        uint32_t size = 0;
         size_t N = inNumberOfStages;
         const double *n = inNumbersOfUnits;
         size_t k;
         for (k = 1; k <= N; k ++) {
             size += (n[k-1] + 1) * (n[k]);
         }
-        return size;     // weights (u)
+        return size + 2;     // weights (u), is_classification, activation
     }
 
     uint32_t rebind(const double *is_classification_in,
@@ -147,7 +147,7 @@ struct MLPModel {
             sizeOfU += (n[k-1] + 1) * (n[k]);
         }
 
-        return sizeOfU;
+        return sizeOfU + 2;
     }
 
     double norm() const {

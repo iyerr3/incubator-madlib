@@ -177,11 +177,20 @@ mlp_minibatch_transition::run(AnyType &args) {
             double is_classification_double = (double) is_classification;
             double activation_double = (double) activation;
             MappedColumnVector coeff = args[10].getAs<MappedColumnVector>();
+
+std::stringstream err_msg;
+err_msg << "Random initial vector: " << trans(coeff);
+warning(err_msg.str());
+
             state.task.model.rebind(&is_classification_double,
                                     &activation_double,
                                     &coeff.data()[0],
                                     numberOfStages,
                                     &numbersOfUnits[0]);
+std::stringstream err_msg2;
+err_msg2 << "Model after rebind: " << trans(state.task.model.u[0]);
+warning(err_msg2.str());
+
         }
     }
 
@@ -269,10 +278,6 @@ mlp_igd_final::run(AnyType &args) {
     state.algo.loss += L2<MLPModelType>::loss(state.task.model);
     MLPIGDAlgorithm::final(state);
 
-std::stringstream err_msg;
-err_msg << state.task.model.u[0].row(0);
-warning(err_msg.str());
-
     AnyType tuple;
     tuple << state
           << (double)state.algo.loss;
@@ -292,6 +297,10 @@ mlp_minibatch_final::run(AnyType &args) {
     if (state.algo.numRows == 0) { return Null(); }
     state.algo.loss = state.algo.loss / state.algo.numBuffers;
     state.algo.loss += L2<MLPModelType>::loss(state.task.model);
+
+std::stringstream err_msg;
+err_msg << state.task.model.u[0].row(0);
+warning(err_msg.str());
 
     AnyType tuple;
     tuple << state
