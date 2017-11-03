@@ -821,7 +821,7 @@ CREATE AGGREGATE MADLIB_SCHEMA.mlp_minibatch_step(
     SFUNC=MADLIB_SCHEMA.mlp_minibatch_transition,
     m4_ifdef(`__POSTGRESQL__', `', `prefunc=MADLIB_SCHEMA.mlp_minibatch_merge,')
     FINALFUNC=MADLIB_SCHEMA.mlp_minibatch_final,
-    INITCOND='{0,0,0,0,0,0,0,0,0,0,0}'
+    INITCOND='{0,0,0,0,0,0,0,0,0,0,0,0,0}'
 );
 -------------------------------------------------------------------------
 

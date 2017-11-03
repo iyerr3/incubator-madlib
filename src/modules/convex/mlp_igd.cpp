@@ -69,7 +69,6 @@ mlp_igd_transition::run(AnyType &args) {
     // For other tuples: args[0] holds the computation state until last tuple
     MLPIGDState<MutableArrayHandle<double> > state = args[0];
 
-
     // initilize the state if first tuple
     if (state.algo.numRows == 0) {
         if (!args[3].isNull()) {
@@ -79,7 +78,8 @@ mlp_igd_transition::run(AnyType &args) {
                            previousState.task.numbersOfUnits);
             state = previousState;
         } else {
-            // configuration parameters
+            // configuration parameters and initialization
+            // this is run only once (first iteration, first tuple)
             ArrayHandle<double> numbersOfUnits = args[4].getAs<ArrayHandle<double> >();
             int numberOfStages = numbersOfUnits.size() - 1;
 
@@ -101,9 +101,15 @@ mlp_igd_transition::run(AnyType &args) {
             double is_classification_double = (double) is_classification;
             double activation_double = (double) activation;
             MappedColumnVector coeff = args[10].getAs<MappedColumnVector>();
-            state.task.model.rebind(&is_classification_double,&activation_double,
-                                    &coeff.data()[0], numberOfStages,
-                                    &numbersOfUnits[0]);
+
+             // copy initial_coeff into the model
+            Index fan_in, fan_out, layer_start = 0;
+            for (size_t k = 0; k < numberOfStages; ++k){
+                fan_in = numbersOfUnits[k];
+                fan_out = numbersOfUnits[k+1];
+                state.algo.model.u[k] << initial_coeff.segment(layer_start, (fan_in+1)*fan_out);
+                layer_start = (fan_in + 1) * fan_out;
+            }
         }
         // resetting in either case
         state.reset();
@@ -147,6 +153,7 @@ mlp_minibatch_transition::run(AnyType &args) {
     // indicates that we should do some initial operations.
     // For other tuples: args[0] holds the computation state until last tuple
     MLPMiniBatchState<MutableArrayHandle<double> > state = args[0];
+
     // initilize the state if first tuple
     if (state.algo.numRows == 0) {
         if (!args[3].isNull()) {
@@ -176,22 +183,21 @@ mlp_minibatch_transition::run(AnyType &args) {
             MLPTask::lambda = lambda;
             double is_classification_double = (double) is_classification;
             double activation_double = (double) activation;
-            MappedColumnVector coeff = args[10].getAs<MappedColumnVector>();
+            state.task.is_classification = is_classification_double;
+            state.task.activation = activation_double;
+            MappedColumnVector initial_coeff = args[10].getAs<MappedColumnVector>();
 
-std::stringstream err_msg;
-err_msg << "Random initial vector: " << trans(coeff);
-warning(err_msg.str());
-
-            state.task.model.rebind(&is_classification_double,
-                                    &activation_double,
-                                    &coeff.data()[0],
-                                    numberOfStages,
-                                    &numbersOfUnits[0]);
-std::stringstream err_msg2;
-err_msg2 << "Model after rebind: " << trans(state.task.model.u[0]);
-warning(err_msg2.str());
-
+            // copy initial_coeff into the model
+            Index fan_in, fan_out, layer_start = 0;
+            for (size_t k = 0; k < numberOfStages; ++k){
+                fan_in = numbersOfUnits[k];
+                fan_out = numbersOfUnits[k+1];
+                state.algo.model.u[k] << initial_coeff.segment(layer_start, (fan_in+1)*fan_out);
+                layer_start = (fan_in + 1) * fan_out;
+            }
         }
+        // resetting in either case
+        state.reset();
     }
 
     // meta data
@@ -216,7 +222,6 @@ warning(err_msg2.str());
     MLPMiniBatchAlgorithm::transitionInMiniBatch2(state, tuple);
     state.algo.numRows += indVar.cols();
     state.algo.numBuffers += 1;
-
     return state;
 }
 
@@ -295,12 +300,10 @@ mlp_minibatch_final::run(AnyType &args) {
     MLPMiniBatchState<MutableArrayHandle<double> > state = args[0];
     // Aggregates that haven't seen any data just return Null.
     if (state.algo.numRows == 0) { return Null(); }
-    state.algo.loss = state.algo.loss / state.algo.numBuffers;
-    state.algo.loss += L2<MLPModelType>::loss(state.task.model);
 
-std::stringstream err_msg;
-err_msg << state.task.model.u[0].row(0);
-warning(err_msg.str());
+    L2<MLPModelType>::lambda = state.task.lambda;
+    state.algo.loss = state.algo.loss/static_cast<double>(state.algo.numRows);
+    state.algo.loss += L2<MLPModelType>::loss(state.algo.model);
 
     AnyType tuple;
     tuple << state
@@ -340,11 +343,6 @@ internal_mlp_igd_result::run(AnyType &args) {
                                                state.task.numbersOfUnits));
     double loss = state.algo.loss;
 
-std::stringstream err_msg;
-err_msg << "result func (model): " << state.task.model.u[0].row(0);
-err_msg << "result func (flattenU): " << flattenU;
-warning(err_msg.str());
-
     AnyType tuple;
     tuple << flattenU
           << loss;
@@ -358,8 +356,8 @@ AnyType
 internal_mlp_minibatch_result::run(AnyType &args) {
     MLPMiniBatchState<ArrayHandle<double> > state = args[0];
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap flattenU;
-    flattenU.rebind(&state.task.model.u[0](0, 0),
-                    state.task.model.arraySize(state.task.numberOfStages,
+    flattenU.rebind(&state.algo.model.u[0](0, 0),
+                    state.algo.model.arraySize(state.task.numberOfStages,
                                                state.task.numbersOfUnits));
     double loss = state.algo.loss;
 
@@ -385,6 +383,7 @@ internal_predict_mlp::run(AnyType &args) {
     bool get_class = is_classification && is_response;
 
     model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+
     try {
         indVar = (args[1].getAs<MappedColumnVector>()-x_means).cwiseQuotient(x_stds);
     } catch (const ArrayWithNullException &e) {

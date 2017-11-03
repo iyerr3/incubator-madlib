@@ -139,7 +139,7 @@ MLP<Model, Tuple>::getLossAndUpdateModel(
     for (i=0; i < n; i++){
         ColumnVector x = x_batch.row(i);
         ColumnVector y_true = y_true_batch.segment(i, 1);
-        // FIXME: currently hard-coded for single output node
+        // FIXME: CURRENTLY HARD-CODED FOR SINGLE OUTPUT NODE
 
         std::vector<ColumnVector> net, o, delta;
         feedForward(model, x, net, o);
@@ -157,9 +157,9 @@ MLP<Model, Tuple>::getLossAndUpdateModel(
     for (k=0; k < N; k++){
         Matrix regularization = MLP<Model, Tuple>::lambda * model.u[k];
         regularization.row(0).setZero(); // Do not update bias
-        model.u[k] -= stepsize * (total_gradient_per_layer[k] + regularization);
+        model.u[k] -= stepsize * (total_gradient_per_layer[k] / n + regularization);
     }
-    return total_loss / n;
+    return total_loss;
 }
 
 template <class Model, class Tuple>
@@ -260,7 +260,7 @@ MLP<Model, Tuple>::feedForward(
     if(model.is_classification){
         double max_x = o[N].maxCoeff();
         o[N] = (o[N].array() - max_x).exp();
-        elog(INFO, "o.sum = %d", o[N].sum());
+        // elog(INFO, "o.sum = %d", o[N].sum());
         o[N] /= o[N].sum();
     }
 }

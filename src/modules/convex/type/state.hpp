@@ -353,7 +353,7 @@ protected:
         algo.batchSize.rebind(&mStorage[5]);
         algo.nEpochs.rebind(&mStorage[6]);
         algo.numBuffers.rebind(&mStorage[7]);
-        task.model.rebind(&mStorage[8], task.nFeatures);
+        algo.model.rebind(&mStorage[8], task.nFeatures);
     }
 
     Handle mStorage;
@@ -363,7 +363,6 @@ public:
         typename HandleTraits<Handle>::ReferenceToUInt32 nFeatures;
         typename HandleTraits<Handle>::ReferenceToDouble stepsize;
         typename HandleTraits<Handle>::ReferenceToDouble reg;
-        typename HandleTraits<Handle>::ColumnVectorTransparentHandleMap model;
     } task;
 
     struct AlgoState {
@@ -372,6 +371,7 @@ public:
         typename HandleTraits<Handle>::ReferenceToDouble loss;
         typename HandleTraits<Handle>::ReferenceToUInt32 batchSize;
         typename HandleTraits<Handle>::ReferenceToUInt32 nEpochs;
+        typename HandleTraits<Handle>::ColumnVectorTransparentHandleMap model;
     } algo;
 };
 
@@ -711,6 +711,8 @@ public:
             + (inNumberOfStages + 1)    // numbersOfUnits: size is (N + 1)
             + 1                         // stepsize
             + 1                         // lambda
+            + 1                         // is_classification
+            + 1                         // activation
             + sizeOfModel               // model
 
             + 1                         // numRows
@@ -805,6 +807,15 @@ public:
     }
 
     /**
+     * @brief Reset the intra-iteration fields.
+     */
+    inline void reset() {
+        algo.numRows = 0;
+        algo.numBuffers = 0;
+        algo.loss = 0.;
+    }
+
+    /**
      * @brief Convert to backend representation
      *
      * We define this function so that we can use State in the
@@ -859,15 +870,18 @@ public:
             + (inNumberOfStages + 1)    // numbersOfUnits: size is (N + 1)
             + 1                         // stepsize
             + 1                         // lambda
-            + sizeOfModel               // model
+            + 1                         // is_classification
+            + 1                         // activation
 
             + 1                         // numRows
             + 1                         // numBuffers
             + 1                         // batchSize
             + 1                         // nEpochs
-            + 1;                        // loss
+            + 1                         // loss
+            + sizeOfModel;              // model
     }
 
+    Handle mStorage;
 private:
     /**
      * @brief Rebind to a new storage array.
@@ -880,10 +894,9 @@ private:
      * - N + 3: lambda (regularization term)
      * - N + 4: is_classification (do classification)
      * - N + 5: activation (activation function)
-     * - N + 6: coeff (coefficients, design doc: u)
      *
      * Intra-iteration components (updated in transition step):
-     *   sizeOfModel = # of entries in u + 2, (\sum_1^N n_{k-1} n_k)
+     *   sizeOfModel = # of entries in u, (\sum_1^N n_{k-1} n_k)
      * - N + 6 + sizeOfModel: coeff (volatile model for incrementally update)
      * - N + 6 + sizeOfModel: numRows (number of rows processed in this iteration)
      * - N + 6 + sizeOfModel: numBuffers (number of rows processed in this iteration)
@@ -892,26 +905,28 @@ private:
      * - N + 7 + 2*sizeOfModel: loss (loss value, the sum of squared errors)
      */
     void rebind() {
+
         task.numberOfStages.rebind(&mStorage[0]);
         size_t N = task.numberOfStages;
+
         task.numbersOfUnits =
             reinterpret_cast<dimension_pointer_type>(&mStorage[1]);
         task.stepsize.rebind(&mStorage[N + 2]);
         task.lambda.rebind(&mStorage[N + 3]);
-        uint32_t sizeOfModel =
-            task.model.rebind(&mStorage[N + 4],
-                              &mStorage[N + 5],
-                              &mStorage[N + 6],
-                              task.numberOfStages, task.numbersOfUnits);
-        algo.numRows.rebind(&mStorage[N + 6 + sizeOfModel]);
-        algo.numBuffers.rebind(&mStorage[N + 7 + sizeOfModel]);
-        algo.batchSize.rebind(&mStorage[N + 8 + sizeOfModel]);
-        algo.nEpochs.rebind(&mStorage[N + 9 + sizeOfModel]);
-        algo.loss.rebind(&mStorage[N + 10 + sizeOfModel]);
-
+        task.is_classification.rebind(&mStorage[N + 4]);
+        task.activation.rebind(&mStorage[N + 5]);
+        algo.numRows.rebind(&mStorage[N + 6]);
+        algo.numBuffers.rebind(&mStorage[N + 7]);
+        algo.batchSize.rebind(&mStorage[N + 8]);
+        algo.nEpochs.rebind(&mStorage[N + 9]);
+        algo.loss.rebind(&mStorage[N + 10]);
+        size_t sizeOfModel = algo.model.rebind(&mStorage[N + 4],
+                          &mStorage[N + 5],
+                          &mStorage[N + 11],
+                          task.numberOfStages,
+                          task.numbersOfUnits);
     }
 
-    Handle mStorage;
 
     typedef typename HandleTraits<Handle>::ReferenceToUInt16 dimension_type;
     typedef typename HandleTraits<Handle>::DoublePtr dimension_pointer_type;
@@ -924,7 +939,8 @@ public:
         dimension_pointer_type numbersOfUnits;
         numeric_type stepsize;
         numeric_type lambda;
-        MLPModel<Handle> model;
+        numeric_type is_classification;
+        numeric_type activation;
     } task;
 
     struct AlgoState {
@@ -933,6 +949,7 @@ public:
         dimension_type batchSize;
         dimension_type nEpochs;
         numeric_type loss;
+        MLPModel<Handle> model;
     } algo;
 };
 

@@ -357,7 +357,7 @@ internal_linear_svm_igd_minibatch_result::run(AnyType &args) {
     SVMMinibatchState<ArrayHandle<double> > state = args[0];
 
     AnyType tuple;
-    tuple << state.task.model
+    tuple << state.algo.model
         << static_cast<double>(state.algo.loss)
         << 0.
         << static_cast<int64_t>(state.algo.numRows);

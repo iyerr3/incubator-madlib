@@ -25,6 +25,7 @@
 """
 import math
 import plpy
+from random import random
 
 from utilities.utilities import add_postfix
 from utilities.utilities import py_list_to_sql_string as PY2SQL
@@ -39,7 +40,6 @@ from utilities.validate_args import input_tbl_valid
 from utilities.validate_args import is_var_valid
 from utilities.validate_args import output_tbl_valid
 from utilities.validate_args import get_expr_type
-from utilities.validate_args import array_col_has_same_dimension
 from utilities.validate_args import array_col_dimension
 
 from convex.utils_regularization import __utils_ind_var_scales
@@ -168,11 +168,11 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 # See design doc for more info
                 span = math.sqrt(6.0 / (fan_in + fan_out))
                 dim = (fan_in + 1) * fan_out
-                # rand = [span * (random()-0.5) for _ in range(dim + 1)]
-                rand = plpy.execute("""SELECT array_agg({span}*(random()-0.5))
-                                       AS random
-                                       FROM generate_series(0,{dim})
-                                    """.format(span=span, dim=dim))[0]["random"]
+                rand = [span * (random() - 0.5) for _ in range(dim)]
+                # rand = plpy.execute("""SELECT array_agg({span} * (random()-0.5))
+                #                        AS random
+                #                        FROM generate_series(1,{dim})
+                #                     """.format(span=span, dim=dim))[0]["random"]
                 coeff += rand
 
         while True:
@@ -226,7 +226,7 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 train_sql = """
                     SELECT
                         (result).state as state,
-                        (result).loss  as loss
+                        (result).loss as loss
                     FROM (
                     SELECT
                         {schema_madlib}.mlp_minibatch_step(
@@ -242,8 +242,8 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                             ({warm_start_coeff})::DOUBLE PRECISION[],
                             {n_tuples},
                             {lmbda},
-                            {n_epochs}::integer,
-                            {batch_size}::integer
+                            {batch_size}::integer,
+                            {n_epochs}::integer
                             ) as result
                     FROM {source_table} as _src) _step_q
                 """.format(

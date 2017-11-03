@@ -103,7 +103,7 @@ template <class Handle>
 struct MLPModel {
     typename HandleTraits<Handle>::ReferenceToUInt16 is_classification;
     typename HandleTraits<Handle>::ReferenceToUInt16 activation;
-    std::vector<Eigen::Map<Matrix > > u;
+    std::vector<MutableMappedMatrix> u;
 
     /**
      * @brief Space needed.
@@ -120,10 +120,10 @@ struct MLPModel {
         size_t N = inNumberOfStages;
         const double *n = inNumbersOfUnits;
         size_t k;
-        for (k = 1; k <= N; k ++) {
-            size += (n[k-1] + 1) * (n[k]);
+        for (k = 0; k < N; k ++) {
+            size += (n[k] + 1) * (n[k+1]);
         }
-        return size + 2;     // weights (u), is_classification, activation
+        return size;     // weights (u)
     }
 
     uint32_t rebind(const double *is_classification_in,
@@ -140,14 +140,13 @@ struct MLPModel {
 
         uint32_t sizeOfU = 0;
         u.clear();
-        for (k = 1; k <= N; k ++) {
-            u.push_back(Eigen::Map<Matrix >(
-                    const_cast<double*>(data + sizeOfU),
-                    n[k-1] + 1, n[k]));
-            sizeOfU += (n[k-1] + 1) * (n[k]);
+        for (k = 0; k < N; k ++) {
+            u.push_back(MutableMappedMatrix());
+            u[k].rebind(const_cast<double *>(data + sizeOfU), n[k] + 1, n[k+1]);
+            sizeOfU += (n[k] + 1) * (n[k+1]);
         }
 
-        return sizeOfU + 2;
+        return sizeOfU;
     }
 
     double norm() const {
@@ -161,8 +160,8 @@ struct MLPModel {
 
     void setZero(){
         size_t k;
-        for (k = 1; k <= u.size(); k ++) {
-            u[k-1].setZero();
+        for (k = 0; k < u.size(); k ++) {
+            u[k].setZero();
         }
     }
 
@@ -173,8 +172,8 @@ struct MLPModel {
         // Note that when scaling the model, you should
         // not update the bias.
         size_t k;
-        for (k = 1; k <= u.size(); k ++) {
-           u[k-1] *= c;
+        for (k = 0; k < u.size(); k ++) {
+           u[k] *= c;
         }
 
         return *this;
@@ -183,8 +182,8 @@ struct MLPModel {
     template<class OtherHandle>
     MLPModel& operator-=(const MLPModel<OtherHandle> &inOtherModel) {
         size_t k;
-        for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
-            u[k-1] -= inOtherModel.u[k-1];
+        for (k = 0; k < u.size() && k < inOtherModel.u.size(); k ++) {
+            u[k] -= inOtherModel.u[k];
         }
 
         return *this;
@@ -193,8 +192,8 @@ struct MLPModel {
     template<class OtherHandle>
     MLPModel& operator+=(const MLPModel<OtherHandle> &inOtherModel) {
         size_t k;
-        for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
-            u[k-1] += inOtherModel.u[k-1];
+        for (k = 0; k < u.size() && k < inOtherModel.u.size(); k ++) {
+            u[k] += inOtherModel.u[k];
         }
 
         return *this;
@@ -203,8 +202,8 @@ struct MLPModel {
     template<class OtherHandle>
     MLPModel& operator=(const MLPModel<OtherHandle> &inOtherModel) {
         size_t k;
-        for (k = 1; k <= u.size() && k <= inOtherModel.u.size(); k ++) {
-            u[k-1] = inOtherModel.u[k-1];
+        for (k = 0; k < u.size() && k < inOtherModel.u.size(); k ++) {
+            u[k] = inOtherModel.u[k];
         }
         is_classification = inOtherModel.is_classification;
         activation = inOtherModel.activation;
