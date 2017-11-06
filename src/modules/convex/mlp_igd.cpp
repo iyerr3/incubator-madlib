@@ -100,14 +100,14 @@ mlp_igd_transition::run(AnyType &args) {
             MLPTask::lambda = lambda;
             double is_classification_double = (double) is_classification;
             double activation_double = (double) activation;
-            MappedColumnVector coeff = args[10].getAs<MappedColumnVector>();
+            MappedColumnVector initial_coeff = args[10].getAs<MappedColumnVector>();
 
              // copy initial_coeff into the model
             Index fan_in, fan_out, layer_start = 0;
             for (size_t k = 0; k < numberOfStages; ++k){
                 fan_in = numbersOfUnits[k];
                 fan_out = numbersOfUnits[k+1];
-                state.algo.model.u[k] << initial_coeff.segment(layer_start, (fan_in+1)*fan_out);
+                state.task.model.u[k] << initial_coeff.segment(layer_start, (fan_in+1)*fan_out);
                 layer_start = (fan_in + 1) * fan_out;
             }
         }
