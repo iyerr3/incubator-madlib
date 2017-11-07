@@ -849,7 +849,7 @@ SELECT mlp_regression(
     'x',                        -- Input features
     'y',                        -- Dependent variable
     ARRAY[40],                 -- Number of units per layer
-    'learning_rate_init=0.015,
+    'learning_rate_init=0.001,
     learning_rate_policy=inv,
     n_iterations=300,
     tolerance=0',
@@ -860,7 +860,7 @@ SELECT mlp_regression(
 
 
 SELECT assert(
-    loss < 5,
+    loss < 10,
     'MLP: Loss is too high (> 10). Wrong result.'
 ) FROM mlp_regress;
 
@@ -873,7 +873,7 @@ SELECT mlp_predict(
     'mlp_prediction_regress',
     'output');
 SELECT assert(
-    0.5*SUM(pow(mlp_prediction_regress.estimated_y-lin_housing_wi.y,2.0))/506 < 2.0,
+    SUM(pow(mlp_prediction_regress.estimated_y-lin_housing_wi.y,2.0))/count(*) < 5.0,
     'MLP: Predict MSE is too high (> 10). Wrong result'
 )
 FROM mlp_prediction_regress JOIN lin_housing_wi

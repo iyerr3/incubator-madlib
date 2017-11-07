@@ -264,12 +264,17 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             if ((state_dist and state_dist < tolerance) or
                     current_iteration > n_iterations):
                 break
+            if loss < best_loss:
+                if mini_batching_enabled:
+                    best_state = curr_state
+                else:
+                    # We use previous state because the last iteration
+                    # just calculates loss
+                    best_state = prev_state
+                best_loss = loss
             prev_state = curr_state
             prev_loss = loss
             current_iteration += 1
-        if loss < best_loss:
-            best_state = curr_state
-            best_loss = loss
 
     _build_model_table(schema_madlib, output_table, best_state,
                        best_loss, current_iteration, mini_batching_enabled)
