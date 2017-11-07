@@ -338,8 +338,8 @@ internal_mlp_igd_result::run(AnyType &args) {
     MLPIGDState<ArrayHandle<double> > state = args[0];
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap
         flattenU;
-    flattenU.rebind(&state.task.model.u[0](0, 0),
-                    state.task.model.arraySize(state.task.numberOfStages,
+    flattenU.rebind(&state.algo.incrModel.u[0](0, 0),
+                    state.algo.incrModel.arraySize(state.task.numberOfStages,
                                                state.task.numbersOfUnits));
     double loss = state.algo.loss;
 

@@ -151,7 +151,6 @@ IGD<State, ConstState, Task>::transition(state_type &state,
                state.algo.model, X_batch, y_batch, state.task.stepsize);
            // state.algo.model -= state.task.stepsize * (gradient + state.task.reg * state.algo.model);
         }
-        loss;
         // elog(NOTICE, "Epoch %d, loss = %e\n", i, loss);
         // return average loss for the first epoch
         if (i==0) state.algo.loss += loss;

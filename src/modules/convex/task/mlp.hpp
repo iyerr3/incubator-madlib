@@ -151,7 +151,7 @@ MLP<Model, Tuple>::getLossAndUpdateModel(
 
         // loss computation
         ColumnVector y_estimated = o.back();
-        total_loss += 0.5 * (y_estimated - y_true).squaredNorm();
+        total_loss += (y_estimated - y_true).squaredNorm();
     }
 
     for (k=0; k < N; k++){
@@ -202,7 +202,7 @@ MLP<Model, Tuple>::loss(
                + (-y_true.array()+1)*(-y_estimated.array()+1).log()).sum();
     }
     else{
-        return 0.5 * (y_estimated-y_true).squaredNorm();
+        return (y_estimated - y_true).squaredNorm();
     }
 }
 
