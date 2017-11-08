@@ -213,8 +213,8 @@ void
 IGD<State, ConstState, Task>::final(state_type &state) {
     // The reason that we have to keep the task.model untouched in transition
     // funtion: loss computation needs the model from last iteration cleanly
-
     state.task.model = state.algo.incrModel;
+
 }
 
 } // namespace convex

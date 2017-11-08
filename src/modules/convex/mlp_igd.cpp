@@ -283,6 +283,10 @@ mlp_igd_final::run(AnyType &args) {
     state.algo.loss += L2<MLPModelType>::loss(state.task.model);
     MLPIGDAlgorithm::final(state);
 
+std::stringstream debug;
+debug << "Final function model = " << state.task.model.u[0];
+warning(debug);
+
     AnyType tuple;
     tuple << state
           << (double)state.algo.loss;
@@ -343,6 +347,10 @@ internal_mlp_igd_result::run(AnyType &args) {
                                                state.task.numbersOfUnits));
     double loss = state.algo.loss;
 
+std::stringstream debug;
+debug << "Result function: flattenU = " << flattenU;
+warning(debug);
+
     AnyType tuple;
     tuple << flattenU
           << loss;
@@ -382,7 +390,8 @@ internal_predict_mlp::run(AnyType &args) {
     double activation = args[3].getAs<double>();
     bool get_class = is_classification && is_response;
 
-    model.rebind(&is_classification,&activation,&coeff.data()[0],numberOfStages,&layerSizes.data()[0]);
+    model.rebind(&is_classification, &activation, &coeff.data()[0],
+                 numberOfStages, &layerSizes.data()[0]);
 
     try {
         indVar = (args[1].getAs<MappedColumnVector>()-x_means).cwiseQuotient(x_stds);

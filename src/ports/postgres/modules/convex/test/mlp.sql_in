@@ -771,74 +771,74 @@ COPY lin_housing_wi (x, grp_by_col, y) FROM STDIN NULL '?' DELIMITER '|';
 {1,0.04741,0.00,11.930,0,0.5730,6.0300,80.80,2.5050,1,273.0,21.00,396.90,7.88} | 2 | 11.90
 \.
 
-DROP TABLE IF EXISTS lin_housing_normalized;
-CREATE TABLE lin_housing_normalized AS
-SELECT id, utils_normalize_data(x, (f).mean, (f).std) AS x, grp_by_col, y
-FROM lin_housing_wi,
-    (SELECT __utils_var_scales_result(
-                    utils_var_scales(x, 14)) as f
-    FROM lin_housing_wi) q;
+-- DROP TABLE IF EXISTS lin_housing_normalized;
+-- CREATE TABLE lin_housing_normalized AS
+-- SELECT id, utils_normalize_data(x, (f).mean, (f).std) AS x, grp_by_col, y
+-- FROM lin_housing_wi,
+--     (SELECT __utils_var_scales_result(
+--                     utils_var_scales(x, 14)) as f
+--     FROM lin_housing_wi) q;
 
-DROP TABLE IF EXISTS lin_housing_batch;
-CREATE TABLE lin_housing_batch AS
-SELECT t as id,
-       matrix_agg(x order by id) as x,
-       array_agg(y order by id) as y
-FROM
-    (SELECT id % 10 as t, * FROM lin_housing_normalized) q
-GROUP BY t;
+-- DROP TABLE IF EXISTS lin_housing_batch;
+-- CREATE TABLE lin_housing_batch AS
+-- SELECT t as id,
+--        matrix_agg(x order by id) as x,
+--        array_agg(y order by id) as y
+-- FROM
+--     (SELECT id % 10 as t, * FROM lin_housing_normalized) q
+-- GROUP BY t;
 
-DROP TABLE IF EXISTS mlp_regress, mlp_regress_summary;
--- SELECT setseed(0);
-SELECT mlp_regression(
-    'lin_housing_batch',           -- Source table
-    'mlp_regress',              -- Desination table
-    'x',                        -- Input features
-    'y',                        -- Dependent variable
-    ARRAY[40],                 -- Number of units per layer
-    'learning_rate_init=0.015,
-    learning_rate_policy=step,
-    lambda=0.001,
-    iterations_per_step=30,
-    n_iterations=150,
-    tolerance=0,
-    batch_size=25, n_epochs=10',
-    'sigmoid',
-    '',
-    False,
-    TRUE);
+-- DROP TABLE IF EXISTS mlp_regress, mlp_regress_summary;
+-- -- SELECT setseed(0);
+-- SELECT mlp_regression(
+--     'lin_housing_batch',           -- Source table
+--     'mlp_regress',              -- Desination table
+--     'x',                        -- Input features
+--     'y',                        -- Dependent variable
+--     ARRAY[40],                 -- Number of units per layer
+--     'learning_rate_init=0.015,
+--     learning_rate_policy=step,
+--     lambda=0.001,
+--     iterations_per_step=30,
+--     n_iterations=150,
+--     tolerance=0,
+--     batch_size=25, n_epochs=10',
+--     'sigmoid',
+--     '',
+--     False,
+--     TRUE);
 
-SELECT loss, num_iterations from mlp_regress;
+-- SELECT loss, num_iterations from mlp_regress;
 
-SELECT assert(
-    loss < 10,
-    'MLP: Loss is too high (> 10). Wrong result.'
-) FROM mlp_regress;
+-- SELECT assert(
+--     loss < 10,
+--     'MLP: Loss is too high (> 10). Wrong result.'
+-- ) FROM mlp_regress;
 
 
-DROP TABLE IF EXISTS mlp_prediction_regress;
-SELECT mlp_predict(
-    'mlp_regress',
-    'lin_housing_normalized',
-    'id',
-    'mlp_prediction_regress',
-    'output');
+-- DROP TABLE IF EXISTS mlp_prediction_regress;
+-- SELECT mlp_predict(
+--     'mlp_regress',
+--     'lin_housing_normalized',
+--     'id',
+--     'mlp_prediction_regress',
+--     'output');
 
-SELECT p.estimated_y[1], s.y
-FROM mlp_prediction_regress AS p JOIN lin_housing_normalized AS s
-USING (id)
-LIMIT 20;
+-- SELECT p.estimated_y[1], s.y
+-- FROM mlp_prediction_regress AS p JOIN lin_housing_normalized AS s
+-- USING (id)
+-- LIMIT 20;
 
-SELECT sqrt(SUM(pow(p.estimated_y[1] - s.y, 2.0))/count(*))
-FROM mlp_prediction_regress AS p JOIN lin_housing_normalized AS s
-USING (id);
+-- SELECT sqrt(SUM(pow(p.estimated_y[1] - s.y, 2.0))/count(*))
+-- FROM mlp_prediction_regress AS p JOIN lin_housing_normalized AS s
+-- USING (id);
 
-SELECT assert(
-    sqrt(SUM(pow(p.estimated_y[1] - s.y, 2.0))/count(*)) < 5.0,
-    'MLP: Predict MSE is too high (> 2). Wrong result'
-)
-FROM mlp_prediction_regress AS p JOIN lin_housing_normalized AS s
-USING (id);
+-- SELECT assert(
+--     sqrt(SUM(pow(p.estimated_y[1] - s.y, 2.0))/count(*)) < 5.0,
+--     'MLP: Predict MSE is too high (> 2). Wrong result'
+-- )
+-- FROM mlp_prediction_regress AS p JOIN lin_housing_normalized AS s
+-- USING (id);
 
 DROP TABLE IF EXISTS mlp_regress, mlp_regress_summary;
 
@@ -848,9 +848,9 @@ SELECT mlp_regression(
     'mlp_regress',              -- Desination table
     'x',                        -- Input features
     'y',                        -- Dependent variable
-    ARRAY[40],                 -- Number of units per layer
+    ARRAY[4],                 -- Number of units per layer
     'learning_rate_init=0.001,
-    learning_rate_policy=inv,
+    learning_rate_policy=step,
     n_iterations=300,
     tolerance=0',
     'sigmoid',
@@ -872,6 +872,11 @@ SELECT mlp_predict(
     'id',
     'mlp_prediction_regress',
     'output');
+
+SELECT SUM(pow(mlp_prediction_regress.estimated_y-lin_housing_wi.y,2.0))/count(*)
+FROM mlp_prediction_regress JOIN lin_housing_wi
+ON mlp_prediction_regress.id = lin_housing_wi.id;
+
 SELECT assert(
     SUM(pow(mlp_prediction_regress.estimated_y-lin_housing_wi.y,2.0))/count(*) < 5.0,
     'MLP: Predict MSE is too high (> 10). Wrong result'
