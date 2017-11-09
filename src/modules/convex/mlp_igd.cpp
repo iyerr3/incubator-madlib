@@ -84,11 +84,9 @@ mlp_igd_transition::run(AnyType &args) {
             int numberOfStages = numbersOfUnits.size() - 1;
 
             double stepsize = args[5].getAs<double>();
-
             state.allocate(*this, numberOfStages,
                            reinterpret_cast<const double *>(numbersOfUnits.ptr()));
             state.task.stepsize = stepsize;
-
 
             const int activation = args[6].getAs<int>();
             const int is_classification = args[7].getAs<int>();
@@ -98,11 +96,12 @@ mlp_igd_transition::run(AnyType &args) {
             const double lambda = args[12].getAs<double>();
             state.task.lambda = lambda;
             MLPTask::lambda = lambda;
-            double is_classification_double = (double) is_classification;
-            double activation_double = (double) activation;
+            state.task.model.is_classification =
+                static_cast<double>(is_classification);
+            state.task.model.activation = static_cast<double>(activation);
             MappedColumnVector initial_coeff = args[10].getAs<MappedColumnVector>();
 
-             // copy initial_coeff into the model
+            // copy initial_coeff into the model
             Index fan_in, fan_out, layer_start = 0;
             for (size_t k = 0; k < numberOfStages; ++k){
                 fan_in = numbersOfUnits[k];
@@ -181,10 +180,9 @@ mlp_minibatch_transition::run(AnyType &args) {
             state.algo.nEpochs = args[14].getAs<int>();
             state.task.lambda = lambda;
             MLPTask::lambda = lambda;
-            double is_classification_double = (double) is_classification;
-            double activation_double = (double) activation;
-            state.task.is_classification = is_classification_double;
-            state.task.activation = activation_double;
+            state.task.model.is_classification =
+                static_cast<double>(is_classification);
+            state.task.model.activation = static_cast<double>(activation);
             MappedColumnVector initial_coeff = args[10].getAs<MappedColumnVector>();
 
             // copy initial_coeff into the model
@@ -192,7 +190,7 @@ mlp_minibatch_transition::run(AnyType &args) {
             for (size_t k = 0; k < numberOfStages; ++k){
                 fan_in = numbersOfUnits[k];
                 fan_out = numbersOfUnits[k+1];
-                state.algo.model.u[k] << initial_coeff.segment(layer_start, (fan_in+1)*fan_out);
+                state.task.model.u[k] << initial_coeff.segment(layer_start, (fan_in+1)*fan_out);
                 layer_start = (fan_in + 1) * fan_out;
             }
         }
@@ -283,10 +281,6 @@ mlp_igd_final::run(AnyType &args) {
     state.algo.loss += L2<MLPModelType>::loss(state.task.model);
     MLPIGDAlgorithm::final(state);
 
-std::stringstream debug;
-debug << "Final function model = " << state.task.model.u[0];
-warning(debug);
-
     AnyType tuple;
     tuple << state
           << (double)state.algo.loss;
@@ -307,7 +301,7 @@ mlp_minibatch_final::run(AnyType &args) {
 
     L2<MLPModelType>::lambda = state.task.lambda;
     state.algo.loss = state.algo.loss/static_cast<double>(state.algo.numRows);
-    state.algo.loss += L2<MLPModelType>::loss(state.algo.model);
+    state.algo.loss += L2<MLPModelType>::loss(state.task.model);
 
     AnyType tuple;
     tuple << state
@@ -342,14 +336,10 @@ internal_mlp_igd_result::run(AnyType &args) {
     MLPIGDState<ArrayHandle<double> > state = args[0];
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap
         flattenU;
-    flattenU.rebind(&state.algo.incrModel.u[0](0, 0),
-                    state.algo.incrModel.arraySize(state.task.numberOfStages,
+    flattenU.rebind(&state.task.model.u[0](0, 0),
+                    state.task.model.arraySize(state.task.numberOfStages,
                                                state.task.numbersOfUnits));
     double loss = state.algo.loss;
-
-std::stringstream debug;
-debug << "Result function: flattenU = " << flattenU;
-warning(debug);
 
     AnyType tuple;
     tuple << flattenU
@@ -364,8 +354,8 @@ AnyType
 internal_mlp_minibatch_result::run(AnyType &args) {
     MLPMiniBatchState<ArrayHandle<double> > state = args[0];
     HandleTraits<ArrayHandle<double> >::ColumnVectorTransparentHandleMap flattenU;
-    flattenU.rebind(&state.algo.model.u[0](0, 0),
-                    state.algo.model.arraySize(state.task.numberOfStages,
+    flattenU.rebind(&state.task.model.u[0](0, 0),
+                    state.task.model.arraySize(state.task.numberOfStages,
                                                state.task.numbersOfUnits));
     double loss = state.algo.loss;
 
@@ -392,7 +382,6 @@ internal_predict_mlp::run(AnyType &args) {
 
     model.rebind(&is_classification, &activation, &coeff.data()[0],
                  numberOfStages, &layerSizes.data()[0]);
-
     try {
         indVar = (args[1].getAs<MappedColumnVector>()-x_means).cwiseQuotient(x_stds);
     } catch (const ArrayWithNullException &e) {

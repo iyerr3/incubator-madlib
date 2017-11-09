@@ -101,8 +101,9 @@ typedef HandleTraits<MutableArrayHandle<double> >::ColumnVectorTransparentHandle
 // have a type that they can template over
 template <class Handle>
 struct MLPModel {
-    typename HandleTraits<Handle>::ReferenceToUInt16 is_classification;
-    typename HandleTraits<Handle>::ReferenceToUInt16 activation;
+    typename HandleTraits<Handle>::ReferenceToDouble is_classification;
+    typename HandleTraits<Handle>::ReferenceToDouble activation;
+    // std::vector<Eigen::Map<Matrix > > u;
     std::vector<MutableMappedMatrix> u;
 
     /**
@@ -141,12 +142,29 @@ struct MLPModel {
         uint32_t sizeOfU = 0;
         u.clear();
         for (k = 0; k < N; k ++) {
+            // u.push_back(Eigen::Map<Matrix >(
+            //     const_cast<double*>(data + sizeOfU),
+            //     n[k] + 1, n[k+1]));
             u.push_back(MutableMappedMatrix());
             u[k].rebind(const_cast<double *>(data + sizeOfU), n[k] + 1, n[k+1]);
             sizeOfU += (n[k] + 1) * (n[k+1]);
         }
 
         return sizeOfU;
+    }
+
+    void initialize(const uint16_t &inNumberOfStages,
+                    const double *inNumbersOfUnits){
+        size_t N = inNumberOfStages;
+        const double *n = inNumbersOfUnits;
+        size_t k;
+        double span;
+        for (k =0; k < N; ++k){
+            // Initalize according to Glorot and Bengio (2010)
+            // See design doc for more info
+            span = sqrt(6.0 / (n[k] + n[k+1]));
+            u[k] << span * Matrix::Random(u[k].rows(), u[k].cols());
+        }
     }
 
     double norm() const {

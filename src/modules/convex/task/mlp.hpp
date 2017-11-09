@@ -151,7 +151,7 @@ MLP<Model, Tuple>::getLossAndUpdateModel(
 
         // loss computation
         ColumnVector y_estimated = o.back();
-        total_loss += (y_estimated - y_true).squaredNorm();
+        total_loss += 0.5 * (y_estimated - y_true).squaredNorm();
     }
 
     for (k=0; k < N; k++){
@@ -202,7 +202,7 @@ MLP<Model, Tuple>::loss(
                + (-y_true.array()+1)*(-y_estimated.array()+1).log()).sum();
     }
     else{
-        return (y_estimated - y_true).squaredNorm();
+        return 0.5 * (y_estimated - y_true).squaredNorm();
     }
 }
 
@@ -216,6 +216,7 @@ MLP<Model, Tuple>::predict(
 
     feedForward(model, x, net, o);
     ColumnVector output = o.back();
+
     if(get_class){ // Return a length 1 array with the predicted index
         int max_idx;
         output.maxCoeff(&max_idx);
@@ -246,12 +247,12 @@ MLP<Model, Tuple>::feedForward(
     else
         activation = &tanh;
 
-    o[0].resize(x.size()+1);
+    o[0].resize(x.size() + 1);
     o[0] << 1.,x;
 
     for (k = 1; k < N; k ++) {
         net[k] = model.u[k-1].transpose() * o[k-1];
-        o[k] = ColumnVector(model.u[k-1].cols()+1);
+        o[k] = ColumnVector(model.u[k-1].cols() + 1);
         o[k] << 1., net[k].unaryExpr(activation);
     }
     o[N] = model.u[N-1].transpose() * o[N-1];

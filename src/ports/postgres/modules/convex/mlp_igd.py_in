@@ -159,7 +159,6 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
     prev_loss = float('inf')
     loss = None
     for _ in range(n_tries):
-        current_iteration = 1
         prev_state = None
         if not warm_start:
             coeff = []
@@ -169,19 +168,15 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
                 span = math.sqrt(6.0 / (fan_in + fan_out))
                 dim = (fan_in + 1) * fan_out
                 rand = [span * (random() - 0.5) for _ in range(dim)]
-                # rand = plpy.execute("""SELECT array_agg({span} * (random()-0.5))
-                #                        AS random
-                #                        FROM generate_series(1,{dim})
-                #                     """.format(span=span, dim=dim))[0]["random"]
                 coeff += rand
 
-        while True:
+        for zero_indexed_iteration in range(n_iterations):
+            current_iteration = zero_indexed_iteration + 1
             if prev_state:
                 prev_state_str = PY2SQL(
                     prev_state, array_type="double precision")
             else:
                 prev_state_str = "(NULL)::DOUBLE PRECISION[]"
-            # else block is for "constant", so don't do anything
             zero_indexed_iteration = current_iteration - 1
             if learning_rate_policy == "exp":
                 step_size = step_size_init * gamma**zero_indexed_iteration
@@ -257,24 +252,23 @@ def mlp(schema_madlib, source_table, output_table, independent_varname,
             step_result = plpy.execute(train_sql)[0]
             curr_state = step_result['state']
             loss = step_result['loss']
-            if verbose and 1 < current_iteration <= n_iterations:
-                plpy.info("Iteration: " + str(current_iteration -
-                                              1) + ", Loss: " + str(loss))
-            state_dist = abs(loss-prev_loss)
-            if ((state_dist and state_dist < tolerance) or
-                    current_iteration > n_iterations):
+            if verbose:
+                plpy.info("Iteration: {0}, Loss: {1}".
+                          format(current_iteration, loss))
+            state_dist = abs(loss - prev_loss)
+            if state_dist < tolerance:
                 break
             if loss < best_loss:
-                if mini_batching_enabled:
-                    best_state = curr_state
-                else:
-                    # We use previous state because the last iteration
-                    # just calculates loss
-                    best_state = prev_state
+                # if mini_batching_enabled:
+                #     best_state = curr_state
+                # else:
+                #     # We use previous state because the last iteration
+                #     # just calculates loss
+                #     best_state = prev_state
+                best_state = curr_state
                 best_loss = loss
             prev_state = curr_state
             prev_loss = loss
-            current_iteration += 1
 
     _build_model_table(schema_madlib, output_table, best_state,
                        best_loss, current_iteration, mini_batching_enabled)
@@ -618,9 +612,8 @@ def mlp_predict(schema_madlib,
     x_stds = PY2SQL(
         summary["x_stds"], array_type="DOUBLE PRECISION")
 
-    pred_name = (
-        '"prob_{0}"' if pred_type == "prob" else
-        '"estimated_{0}"').format(dependent_varname.replace('"', '').strip())
+    pred_name = (('"prob_{0}"' if pred_type == "prob" else '"estimated_{0}"').
+                 format(dependent_varname.replace('"', '').strip()))
 
     input_tbl_valid(data_table, 'MLP')
 
@@ -641,7 +634,7 @@ def mlp_predict(schema_madlib,
         dependent_type = get_expr_type(dependent_varname, source_table)
         unnest_if_not_array = ""
         # Return the same type as the user provided.  Internally we always
-        # use an array, but if they provided a scaler, unnest it for
+        # use an array, but if they provided a scalar, unnest it for
         # the user
         if "[]" not in dependent_type:
             unnest_if_not_array = "UNNEST"
@@ -655,15 +648,14 @@ def mlp_predict(schema_madlib,
                         {layer_sizes},
                         {is_response},
                         {x_means},
-                        {x_stds}
+                        {x_stds},
+                        {dependent_varname}
                     )) as {pred_name}
             FROM {data_table}
             """
     else:
-        summary_query = """
-        SELECT classes FROM {0}
-        """.format(summary_table)
-        classes = plpy.execute(summary_query)[0]['classes']
+        classes = plpy.execute(
+            "SELECT classes FROM " + summary_table)[0]['classes']
         if pred_type == "response":
             classes_with_index_table = unique_string()
             classes_table = unique_string()

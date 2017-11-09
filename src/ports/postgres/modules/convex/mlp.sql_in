@@ -1094,7 +1094,8 @@ CREATE FUNCTION MADLIB_SCHEMA.internal_predict_mlp(
         layer_sizes DOUBLE PRECISION[],
         is_response INTEGER,
         x_means DOUBLE PRECISION[],
-        x_stds DOUBLE PRECISION[]
+        x_stds DOUBLE PRECISION[],
+        true_val DOUBLE PRECISION
     )
 RETURNS DOUBLE PRECISION[]
 AS 'MODULE_PATHNAME'

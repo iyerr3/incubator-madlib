@@ -84,7 +84,7 @@ IGD<State, ConstState, Task>::transition(state_type &state,
 
      // elog(INFO, "Number of items = %d, batch_size = %d, Number of batches = %d\n", N, batch_size, n_batches);
 
-     model_eigen_type gradient(state.algo.model);
+     model_eigen_type gradient(state.task.model);
      double avg_loss = 0.0;
      for (int i=0; i < n_epochs; i++) {
          double loss = 0.0;
@@ -99,13 +99,13 @@ IGD<State, ConstState, Task>::transition(state_type &state,
                  X_batch = tuple.indVar.block(k, 0, batch_size, d);
                  y_batch = tuple.depVar.segment(k, batch_size);
              }
-             loss += Task::lossAndGradient(state.algo.model,
+             loss += Task::lossAndGradient(state.task.model,
                                            X_batch, y_batch,
                                            gradient);
-             state.algo.model -= state.task.stepsize * (gradient + state.task.reg * state.algo.model);
+             state.task.model -= state.task.stepsize * (gradient + state.task.reg * state.task.model);
          }
          loss /= n_batches;
-         elog(NOTICE, "Epoch %d, loss = %e\n", i, loss);
+         // elog(NOTICE, "Epoch %d, loss = %e\n", i, loss);
          // return average loss for the first epoch
          if (i==0) state.algo.loss += loss;
      }
@@ -148,8 +148,8 @@ IGD<State, ConstState, Task>::transition(state_type &state,
                y_batch = tuple.depVar.segment(k, batch_size);
            }
            loss += Task::getLossAndUpdateModel(
-               state.algo.model, X_batch, y_batch, state.task.stepsize);
-           // state.algo.model -= state.task.stepsize * (gradient + state.task.reg * state.algo.model);
+               state.task.model, X_batch, y_batch, state.task.stepsize);
+           // state.task.model -= state.task.stepsize * (gradient + state.task.reg * state.task.model);
         }
         // elog(NOTICE, "Epoch %d, loss = %e\n", i, loss);
         // return average loss for the first epoch
@@ -193,7 +193,7 @@ IGD<State, ConstState, Task>::mergeInPlace(state_type &state,
         const_state_type &otherState) {
     // avoid division by zero
     if (state.algo.numRows == 0) {
-        state.algo.model = otherState.algo.model;
+        state.task.model = otherState.task.model;
         return;
     } else if (otherState.algo.numRows == 0) {
         return;
@@ -203,9 +203,9 @@ IGD<State, ConstState, Task>::mergeInPlace(state_type &state,
     double leftRows = static_cast<double>(state.algo.numRows + state.algo.numBuffers);
     double rightRows = static_cast<double>(otherState.algo.numRows + otherState.algo.numBuffers);
     double totalNumRows = leftRows + rightRows;
-    state.algo.model *= leftRows / rightRows;
-    state.algo.model += otherState.algo.model;
-    state.algo.model *= rightRows / totalNumRows;
+    state.task.model *= leftRows / rightRows;
+    state.task.model += otherState.task.model;
+    state.task.model *= rightRows / totalNumRows;
 }
 
 template <class State, class ConstState, class Task>

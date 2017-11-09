@@ -353,7 +353,7 @@ protected:
         algo.batchSize.rebind(&mStorage[5]);
         algo.nEpochs.rebind(&mStorage[6]);
         algo.numBuffers.rebind(&mStorage[7]);
-        algo.model.rebind(&mStorage[8], task.nFeatures);
+        task.model.rebind(&mStorage[8], task.nFeatures);
     }
 
     Handle mStorage;
@@ -363,6 +363,7 @@ public:
         typename HandleTraits<Handle>::ReferenceToUInt32 nFeatures;
         typename HandleTraits<Handle>::ReferenceToDouble stepsize;
         typename HandleTraits<Handle>::ReferenceToDouble reg;
+        typename HandleTraits<Handle>::ColumnVectorTransparentHandleMap model;
     } task;
 
     struct AlgoState {
@@ -371,7 +372,6 @@ public:
         typename HandleTraits<Handle>::ReferenceToDouble loss;
         typename HandleTraits<Handle>::ReferenceToUInt32 batchSize;
         typename HandleTraits<Handle>::ReferenceToUInt32 nEpochs;
-        typename HandleTraits<Handle>::ColumnVectorTransparentHandleMap model;
     } algo;
 };
 
@@ -878,6 +878,7 @@ public:
             + 1                         // batchSize
             + 1                         // nEpochs
             + 1                         // loss
+
             + sizeOfModel;              // model
     }
 
@@ -913,14 +914,12 @@ private:
             reinterpret_cast<dimension_pointer_type>(&mStorage[1]);
         task.stepsize.rebind(&mStorage[N + 2]);
         task.lambda.rebind(&mStorage[N + 3]);
-        task.is_classification.rebind(&mStorage[N + 4]);
-        task.activation.rebind(&mStorage[N + 5]);
         algo.numRows.rebind(&mStorage[N + 6]);
         algo.numBuffers.rebind(&mStorage[N + 7]);
         algo.batchSize.rebind(&mStorage[N + 8]);
         algo.nEpochs.rebind(&mStorage[N + 9]);
         algo.loss.rebind(&mStorage[N + 10]);
-        size_t sizeOfModel = algo.model.rebind(&mStorage[N + 4],
+        size_t sizeOfModel = task.model.rebind(&mStorage[N + 4],
                           &mStorage[N + 5],
                           &mStorage[N + 11],
                           task.numberOfStages,
@@ -939,8 +938,7 @@ public:
         dimension_pointer_type numbersOfUnits;
         numeric_type stepsize;
         numeric_type lambda;
-        numeric_type is_classification;
-        numeric_type activation;
+        MLPModel<Handle> model;
     } task;
 
     struct AlgoState {
@@ -949,7 +947,6 @@ public:
         dimension_type batchSize;
         dimension_type nEpochs;
         numeric_type loss;
-        MLPModel<Handle> model;
     } algo;
 };
 
