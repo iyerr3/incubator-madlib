@@ -489,13 +489,18 @@ print_decision_tree::run(AnyType &args){
 
 AnyType
 display_text_tree::run(AnyType &args){
+    elog(INFO, "00000000000000000000000000000000000000000000000000000000000");
     Tree dt = args[0].getAs<ByteString>();
     ArrayHandle<text*> cat_feature_names = args[1].getAs<ArrayHandle<text*> >();
+    elog(INFO, "11111111111111111111111111111111111111111111111111111111111");
     ArrayHandle<text*> con_feature_names = args[2].getAs<ArrayHandle<text*> >();
+    elog(INFO, "22222222222222222222222222222222222222222222222222222222222");
     ArrayHandle<text*> cat_levels_text = args[3].getAs<ArrayHandle<text*> >();
-    ArrayHandle<int> cat_n_levels = args[4].getAs<ArrayHandle<int> >();
+    elog(INFO, "33333333333333333333333333333333333333333333333333333333333");
     ArrayHandle<text*> dep_levels = args[5].getAs<ArrayHandle<text*> >();
-
+    elog(INFO, "44444444444444444444444444444444444444444444444444444444444");
+    ArrayHandle<int32_t> cat_n_levels = args[4].getAs<ArrayHandle<int32_t> >();
+    elog(INFO, "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
     return dt.print(0, cat_feature_names, con_feature_names, cat_levels_text,
                     cat_n_levels, dep_levels, 1u);
 }

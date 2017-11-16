@@ -268,7 +268,7 @@ DROP TABLE IF EXISTS train_output, train_output_summary;
 SELECT tree_train('dt_golf'::text,         -- source table
                          'train_output'::text,    -- output model table
                          'id'::text,              -- id column
-                         'temperature::double precision'::text,           -- response
+                         'class'::text,           -- response
                          'humidity, windy, "Cont_features"'::text,   -- features
                          NULL::text,        -- exclude columns
                          'gini'::text,      -- split criterion
@@ -304,7 +304,7 @@ SELECT tree_train('dt_golf'::text,         -- source table
                          );
 
 SELECT _print_decision_tree(tree) from train_output;
-SELECT tree_display('train_output', False);
+-- SELECT tree_display('train_output', False);
 
 
 -- testing tree_predict with a category not present in training table
@@ -348,7 +348,7 @@ SELECT tree_train('dt_golf'::text,         -- source table
                          );
 
 SELECT _print_decision_tree(tree) from train_output;
-SELECT tree_display('train_output', False);
+-- SELECT tree_display('train_output', False);
 SELECT tree_predict('train_output', 'dt_golf', 'predict_output');
 \x off
 SELECT *
@@ -399,7 +399,7 @@ select __build_tree(
     0
     );
 
-select tree_display('train_output', FALSE);
+-- select tree_display('train_output', FALSE);
 
 \d train_output_summary
 \x on
@@ -430,5 +430,5 @@ SELECT tree_train('array_test'::text,         -- source table
               );
 SELECT * FROM train_output_summary;
 SELECT _print_decision_tree(tree) FROM train_output;
-SELECT tree_display('train_output', False);
+-- SELECT tree_display('train_output', False);
 SELECT tree_predict('train_output', 'array_test', 'predict_output');

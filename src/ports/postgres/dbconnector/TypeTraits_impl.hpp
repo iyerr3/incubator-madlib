@@ -279,21 +279,28 @@ struct TypeTraits<FunctionHandle> {
 };
 
 template <>
-struct TypeTraits<ArrayHandle<int32_t> >
-  : public TypeTraitsBase<ArrayHandle<int32_t> > {
-    enum { oid = INT4ARRAYOID };
-    enum { isMutable = dbal::Immutable };
-    enum { typeClass = dbal::ArrayType };
+struct TypeTraits<ArrayHandle<int32_t> > {
+    typedef ArrayHandle<int32_t> value_type;
+
+    WITH_OID( INT4ARRAYOID );
+    WITH_TYPE_CLASS( dbal::ArrayType );
+    WITH_MUTABILITY( dbal::Immutable );
+    WITH_DEFAULT_EXTENDED_TRAITS;
     WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
-    WITH_TO_CXX_CONVERSION( madlib_DatumGetArrayTypeP(value) );
+    WITH_TO_CXX_CONVERSION(
+        value_type(
+            reinterpret_cast<ArrayType*>(madlib_DatumGetArrayTypeP(value)))
+    );
 };
 
 template <>
-struct TypeTraits<MutableArrayHandle<int32_t> >
-  : public TypeTraitsBase<MutableArrayHandle<int32_t> > {
-    enum { oid = INT4ARRAYOID };
-    enum { isMutable = dbal::Mutable };
-    enum { typeClass = dbal::ArrayType };
+struct TypeTraits<MutableArrayHandle<int32_t> > {
+    typedef MutableArrayHandle<int32_t> value_type;
+
+    WITH_OID( INT4ARRAYOID );
+    WITH_TYPE_CLASS( dbal::ArrayType );
+    WITH_MUTABILITY( dbal::Mutable );
+    WITH_DEFAULT_EXTENDED_TRAITS;
     WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
     WITH_TO_CXX_CONVERSION(
         needMutableClone
@@ -307,7 +314,7 @@ struct TypeTraits<ArrayHandle<int64_t> >
   : public TypeTraitsBase<ArrayHandle<int64_t> > {
     enum { oid = INT8ARRAYOID };
     enum { isMutable = dbal::Immutable };
-    enum { typeClass = dbal::ArrayType };
+    WITH_TYPE_CLASS( dbal::ArrayType );
     WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
     WITH_TO_CXX_CONVERSION( madlib_DatumGetArrayTypeP(value) );
 };
@@ -317,7 +324,7 @@ struct TypeTraits<MutableArrayHandle<int64_t> >
   : public TypeTraitsBase<MutableArrayHandle<int64_t> > {
     enum { oid = INT8ARRAYOID };
     enum { isMutable = dbal::Mutable };
-    enum { typeClass = dbal::ArrayType };
+    WITH_TYPE_CLASS( dbal::ArrayType );
     WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
     WITH_TO_CXX_CONVERSION(
         needMutableClone
@@ -335,20 +342,9 @@ struct TypeTraits<ArrayHandle<double> > {
     WITH_MUTABILITY( dbal::Immutable );
     WITH_DEFAULT_EXTENDED_TRAITS;
     WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
-    WITH_TO_CXX_CONVERSION( madlib_DatumGetArrayTypeP(value) );
-};
-
-template <>
-struct TypeTraits<ArrayHandle<text*> > {
-    typedef ArrayHandle<text*> value_type;
-
-    WITH_OID(TEXTARRAYOID);
-    WITH_TYPE_CLASS( dbal::ArrayType );
-    WITH_MUTABILITY( dbal::Immutable );
-    WITH_DEFAULT_EXTENDED_TRAITS;
-    WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
     WITH_TO_CXX_CONVERSION(
-        reinterpret_cast<ArrayType*>(madlib_DatumGetArrayTypeP(value))
+        value_type(
+            reinterpret_cast<ArrayType*>(madlib_DatumGetArrayTypeP(value)))
     );
 };
 
@@ -371,6 +367,20 @@ struct TypeTraits<MutableArrayHandle<double> > {
     );
 };
 
+
+template <>
+struct TypeTraits<ArrayHandle<text*> > {
+    typedef ArrayHandle<text*> value_type;
+
+    WITH_OID(TEXTARRAYOID);
+    WITH_TYPE_CLASS( dbal::ArrayType );
+    WITH_MUTABILITY( dbal::Immutable );
+    WITH_DEFAULT_EXTENDED_TRAITS;
+    WITH_TO_PG_CONVERSION( PointerGetDatum(value.array()) );
+    WITH_TO_CXX_CONVERSION(
+        reinterpret_cast<ArrayType*>(madlib_DatumGetArrayTypeP(value))
+    );
+};
 // NativeColumnVector
 template <>
 struct TypeTraits<

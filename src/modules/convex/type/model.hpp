@@ -126,7 +126,7 @@ struct MLPModel {
         return size;     // weights (u)
     }
 
-    uint32_t rebind(const double *is_classification_in,
+    size_t rebind(const double *is_classification_in,
                     const double *activation_in,
                     const double *data,
                     const uint16_t &inNumberOfStages,
@@ -138,13 +138,14 @@ struct MLPModel {
         is_classification.rebind(is_classification_in);
         activation.rebind(activation_in);
 
-        uint32_t sizeOfU = 0;
+        size_t sizeOfU = 0;
         u.clear();
         for (k = 1; k <= N; k ++) {
             u.push_back(Eigen::Map<Matrix >(
                     const_cast<double*>(data + sizeOfU),
-                    n[k-1] + 1, n[k]));
-            sizeOfU += (n[k-1] + 1) * (n[k]);
+                    static_cast<size_t>(n[k-1] + 1),
+                    static_cast<size_t>(n[k])));
+            sizeOfU += static_cast<size_t>((n[k-1] + 1) * (n[k]));
         }
 
         return sizeOfU;

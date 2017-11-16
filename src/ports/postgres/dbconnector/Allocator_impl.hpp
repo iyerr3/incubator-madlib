@@ -400,7 +400,7 @@ Allocator::internalAllocate(void *inPtr, const size_t inSize) const {
              * exception will be re-thrown into the PostgreSQL C code.
              *
              * Throwing C++ exceptions inside a PG_CATCH block is not problematic
-             * per se, but it is good practise to keep the exception mechanisms clearly
+             * per se, but it is good practice to keep the exception mechanisms clearly
              * separated.
              */
 

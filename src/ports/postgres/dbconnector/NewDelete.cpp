@@ -34,7 +34,8 @@
  * that size.
  */
 void*
-operator new(std::size_t size) throw (std::bad_alloc) {
+operator new(std::size_t size) noexcept(false) {
+    elog(INFO, "------ madlib throw new ------------");
     return madlib::defaultAllocator().allocate<
         madlib::dbal::FunctionContext,
         madlib::dbal::DoNotZero,
@@ -42,7 +43,8 @@ operator new(std::size_t size) throw (std::bad_alloc) {
 }
 
 void*
-operator new[](std::size_t size) throw (std::bad_alloc) {
+operator new[](std::size_t size) noexcept(false) {
+    elog(INFO, "------ madlib throw new[] ------------");
     return madlib::defaultAllocator().allocate<
         madlib::dbal::FunctionContext,
         madlib::dbal::DoNotZero,
@@ -58,12 +60,14 @@ operator new[](std::size_t size) throw (std::bad_alloc) {
  * <tt>operator new(std::size_t)</tt>.
  */
 void
-operator delete(void *ptr) throw() {
+operator delete(void *ptr) noexcept {
+    elog(INFO, "------ madlib throw delete ------------");
     madlib::defaultAllocator().free<madlib::dbal::FunctionContext>(ptr);
 }
 
 void
-operator delete[](void *ptr) throw() {
+operator delete[](void *ptr) noexcept {
+    elog(INFO, "------ madlib throw delete[] ------------");
     madlib::defaultAllocator().free<madlib::dbal::FunctionContext>(ptr);
 }
 
@@ -75,7 +79,8 @@ operator delete[](void *ptr) throw() {
  * indication, instead of a bad_alloc exception.
  */
 void*
-operator new(std::size_t size, const std::nothrow_t&) throw() {
+operator new(std::size_t size, const std::nothrow_t&) noexcept {
+    elog(INFO, "------ madlib new ------------");
     return madlib::defaultAllocator().allocate<
         madlib::dbal::FunctionContext,
         madlib::dbal::DoNotZero,
@@ -83,7 +88,8 @@ operator new(std::size_t size, const std::nothrow_t&) throw() {
 }
 
 void*
-operator new[](std::size_t size, const std::nothrow_t&) throw() {
+operator new[](std::size_t size, const std::nothrow_t&) noexcept {
+    elog(INFO, "------ madlib new[] ------------");
     return madlib::defaultAllocator().allocate<
         madlib::dbal::FunctionContext,
         madlib::dbal::DoNotZero,
@@ -98,10 +104,12 @@ operator new[](std::size_t size, const std::nothrow_t&) throw() {
  */
 void
 operator delete(void *ptr, const std::nothrow_t&) throw() {
+    elog(INFO, "------ madlib delete ------------");
     madlib::defaultAllocator().free<madlib::dbal::FunctionContext>(ptr);
 }
 
 void
 operator delete[](void *ptr, const std::nothrow_t&) throw() {
+    elog(INFO, "------ madlib delete[] ------------");
     madlib::defaultAllocator().free<madlib::dbal::FunctionContext>(ptr);
 }

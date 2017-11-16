@@ -78,7 +78,7 @@ mlp_igd_transition::run(AnyType &args) {
         } else {
             // configuration parameters
             ArrayHandle<double> numbersOfUnits = args[4].getAs<ArrayHandle<double> >();
-            int numberOfStages = numbersOfUnits.size() - 1;
+            uint16_t numberOfStages = static_cast<uint16_t>(numbersOfUnits.size() - 1);
 
             double stepsize = args[5].getAs<double>();
 
@@ -90,7 +90,6 @@ mlp_igd_transition::run(AnyType &args) {
             const int activation = args[6].getAs<int>();
             const int is_classification = args[7].getAs<int>();
 
-            const bool warm_start = args[9].getAs<bool>();
             const double lambda = args[11].getAs<double>();
             state.task.lambda = lambda;
             MLPTask::lambda = lambda;
@@ -104,10 +103,6 @@ mlp_igd_transition::run(AnyType &args) {
         // resetting in either case
         state.reset();
     }
-
-    // meta data
-    const uint16_t N = state.task.numberOfStages;
-    const double *n = state.task.numbersOfUnits;
 
     // tuple
     ColumnVector indVar;

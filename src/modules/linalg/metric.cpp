@@ -6,6 +6,10 @@
  *
  *//* ----------------------------------------------------------------------- */
 
+#ifndef _GLIBCXX_USE_CXX11_ABI
+#define _GLIBCXX_USE_CXX11_ABI 0
+#endif
+
 #include <dbconnector/dbconnector.hpp>
 #include <limits>
 #include <string>
@@ -286,10 +290,12 @@ distJaccard(const ArrayHandle<text*>& inX, const ArrayHandle<text*>& inY) {
 
 std::string dist_fn_name(string s)
 {
+    elog(INFO, "dist_fn_name starts");
     std::istringstream ss(s);
     std::string token, fname;
     if (std::getline(ss, token, '.')) fname = token; // suppose there is no schema name
     if (std::getline(ss, token, '.')) fname = token; // previous part is schema name
+    elog(INFO, "dist_fn_name ends");
     return fname;
 }
 

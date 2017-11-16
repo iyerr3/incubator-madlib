@@ -1358,7 +1358,7 @@ DecisionTree<Container>::print(
         ArrayHandle<int> &cat_n_levels,
         ArrayHandle<text*> &dep_levels,
         uint16_t recursion_depth){
-
+elog(INFO, "Started print");
     if (feature_indices(current) == NODE_NON_EXISTING){
         return "";
     }
@@ -1372,11 +1372,14 @@ DecisionTree<Container>::print(
                      << statPredict(predictions.row(current));
     }
     else{
+    elog(INFO, "print 0");
         print_string << predictions.row(current).head(n_y_labels);
     }
     print_string << "]  ";
 
+elog(INFO, "print 1");
     if (feature_indices(current) >= 0){
+    elog(INFO, "print 2");
         string label_str = print_split(static_cast<bool>(is_categorical(current)),
                                        false,
                                        feature_indices(current),
@@ -1400,6 +1403,7 @@ DecisionTree<Container>::print(
                      con_features_str, cat_levels_text,
                      cat_n_levels, dep_levels, static_cast<uint16_t>(recursion_depth + 1));
     } else {
+    elog(INFO, "print 3");
         print_string << "*";
         if (!is_regression){
             std::string dep_value = get_text(dep_levels,
@@ -1409,6 +1413,7 @@ DecisionTree<Container>::print(
         print_string << std::endl;
     }
     return print_string.str();
+elog(INFO, "Finished print");
 }
 // -------------------------------------------------------------------------
 

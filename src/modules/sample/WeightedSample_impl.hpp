@@ -7,13 +7,13 @@
 #ifndef MADLIB_MODULES_SAMPLE_WEIGHTED_SAMPLE_IMPL_HPP
 #define MADLIB_MODULES_SAMPLE_WEIGHTED_SAMPLE_IMPL_HPP
 
-#include <boost/tr1/random.hpp>
+#include <random>
 
 // Import TR1 names (currently used from boost). This can go away once we make
 // the switch to C++11.
-namespace std {
-    using tr1::bernoulli_distribution;
-}
+// namespace std {
+//     using tr1::bernoulli_distribution;
+// }
 
 namespace madlib {
 
@@ -37,7 +37,7 @@ bindWeightedSampleAcc(
     WeightedSampleAccumulator<Container, T>& ioAccumulator,
     typename WeightedSampleAccumulator<Container, T>::ByteStream_type&
         inStream) {
-    
+
     inStream >> ioAccumulator.weight_sum >> ioAccumulator.sample;
 }
 
@@ -48,7 +48,7 @@ bindWeightedSampleAcc(
     WeightedSampleAccumulator<Container, MappedColumnVector>& ioAccumulator,
     typename WeightedSampleAccumulator<Container, MappedColumnVector>
         ::ByteStream_type& inStream) {
-    
+
     inStream >> ioAccumulator.weight_sum >> ioAccumulator.header.width;
     uint32_t actualWidth = ioAccumulator.header.width.isNull()
         ? 0
@@ -85,7 +85,7 @@ void
 prepareSample(
     WeightedSampleAccumulator<Container, MappedColumnVector>& ioAccumulator,
     const MappedColumnVector& inX) {
-    
+
     uint32_t width = static_cast<uint32_t>(inX.size());
     if (width > ioAccumulator.header.width) {
         ioAccumulator.header.width = width;
@@ -118,7 +118,7 @@ WeightedSampleAccumulator<Container, T>::operator<<(
             sample = x;
         }
     }
-    
+
     return *this;
 }
 
