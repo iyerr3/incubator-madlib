@@ -59,7 +59,8 @@ pagerank( vertex_table,
           damping_factor,
           max_iter,
           threshold,
-          grouping_cols
+          grouping_cols, 
+          nodes_of_interest
         )
 </pre>
 
@@ -120,6 +121,10 @@ distribution per group. When this value is NULL, no grouping is used and
 a single model is generated for all data.
 @note Expressions are not currently supported for 'grouping_cols'.</dd>
 
+<dt> nodes_of_interest (optional) </dt>
+<dd>ARRAY OF INTEGER, default: NULL. A comma seperated list of vertices or nodes
+for personalized page rank. When this parameter is provided, Personalized Page Rank 
+will run and in the absence of this parameter, regular Page Run will run. 
 </dl>
 
 @anchor examples
@@ -273,6 +278,48 @@ SELECT * FROM pagerank_out_summary ORDER BY user_id;
 (2 rows)
 </pre>
 
+-# Example of Personalized Page Rank with Nodes {2,4}
+<pre class="syntax">
+DROP TABLE IF EXISTS pagerank_out, pagerank_out_summary;
+SELECT madlib.pagerank(
+                       'vertex',             -- Vertex table
+                       'id',                 -- Vertix id column
+                       'edge',               -- Edge table
+                       'src=src, dest=dest', -- Comma delimted string of edge arguments
+                       'pagerank_out',       -- Output table of PageRank 
+                        NULL,                -- Default damping factor (0.85)
+                        NULL,                -- Default max iters (100)
+                        NULL,                -- Default Threshold 
+                        NULL,                -- No Grouping 
+                       '{2,4}');             -- Personlized Nodes
+SELECT * FROM pagerank_out ORDER BY pagerank DESC;
+</pre>
+<pre class="syntax">
+select * from pagerank_out order by pagerank desc; 
+</pre>
+<pre class="result">
+ id |      pagerank      
+----+--------------------
+  0 |  0.565232961966315
+  2 |  0.378139420991773
+  3 |  0.355003292266017
+  4 |  0.310111215897626
+  1 |  0.160111215897626
+  6 |  0.148615315574136
+  5 | 0.0803403307142321
+(7 rows)
+
+</pre>
+<pre class="syntax">
+SELECT * FROM pagerank_out_summary;
+</pre>
+<pre class="result">
+ __iterations__
+ ----------------+
+             37
+(1 row)
+</pre>
+
 @anchor literature
 @par Literature
 
@@ -288,7 +335,8 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.pagerank(
     damping_factor  FLOAT8,
     max_iter        INTEGER,
     threshold       FLOAT8,
-    grouping_cols   VARCHAR
+    grouping_cols   VARCHAR,
+    nodes_of_interest INTEGER[]
 ) RETURNS VOID AS $$
     PythonFunction(graph, pagerank, pagerank)
 $$ LANGUAGE plpythonu VOLATILE
@@ -304,7 +352,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.pagerank(
     max_iter        INTEGER,
     threshold       FLOAT8
 ) RETURNS VOID AS $$
-    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, $6, $7, $8, NULL)
+    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL)
 $$ LANGUAGE SQL
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
 -------------------------------------------------------------------------
@@ -317,7 +365,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.pagerank(
     damping_factor  FLOAT8,
     max_iter        INTEGER
 ) RETURNS VOID AS $$
-    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, $6, $7, NULL, NULL)
+    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, $6, $7, NULL, NULL, NULL)
 $$ LANGUAGE SQL
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
 -------------------------------------------------------------------------
@@ -329,7 +377,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.pagerank(
     out_table       TEXT,
     damping_factor  FLOAT8
 ) RETURNS VOID AS $$
-    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, $6, 100, NULL, NULL)
+    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, $6, 100, NULL, NULL, NULL)
 $$ LANGUAGE SQL
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
 -------------------------------------------------------------------------
@@ -340,7 +388,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.pagerank(
     edge_args       TEXT,
     out_table       TEXT
 ) RETURNS VOID AS $$
-    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, 0.85, 100, NULL, NULL)
+    SELECT MADLIB_SCHEMA.pagerank($1, $2, $3, $4, $5, 0.85, 100, NULL, NULL, NULL)
 $$ LANGUAGE SQL
 m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `MODIFIES SQL DATA', `');
 -------------------------------------------------------------------------

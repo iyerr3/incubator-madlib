@@ -66,7 +66,12 @@ SELECT pagerank(
              'id',            -- Vertix id column
              '"EDGE"',          -- "EDGE" table
              'src=src, dest=dest', -- "EDGE" args
-             'pagerank_out'); -- Output table of PageRank
+             'pagerank_out',
+              NULL,
+              NULL,
+              NULL,
+              NULL,
+             NULL); -- Output table of PageRank
 
 -- View the PageRank of all vertices, sorted by their scores.
 SELECT assert(relative_error(SUM(pagerank), 1) < 0.00001,
@@ -84,7 +89,8 @@ SELECT pagerank(
              NULL,
              NULL,
              NULL,
-             'user_id');
+             'user_id',
+             NULL);
 
 -- View the PageRank of all vertices, sorted by their scores.
 SELECT assert(relative_error(SUM(pagerank), 1) < 0.00001,
