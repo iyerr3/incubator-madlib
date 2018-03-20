@@ -278,7 +278,7 @@ SELECT * FROM pagerank_out_summary ORDER BY user_id;
 (2 rows)
 </pre>
 
--# Example of Personalized Page Rank with Nodes {2,4}
+-# Example of Personalized Page Rank with Nodes {2,4}. nodes_of_interest can be passed in ARRAY[2,4] format as well. 
 <pre class="syntax">
 DROP TABLE IF EXISTS pagerank_out, pagerank_out_summary;
 SELECT madlib.pagerank(
@@ -293,9 +293,6 @@ SELECT madlib.pagerank(
                         NULL,                -- No Grouping 
                        '{2,4}');             -- Personlized Nodes
 SELECT * FROM pagerank_out ORDER BY pagerank DESC;
-</pre>
-<pre class="syntax">
-select * from pagerank_out order by pagerank desc; 
 </pre>
 <pre class="result">
  id |      pagerank      

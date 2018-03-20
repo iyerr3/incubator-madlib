@@ -67,11 +67,11 @@ def validate_pagerank_args(schema_madlib, vertex_table, vertex_id, edge_table,
             format(damping_factor))
 
     if nodes_of_interest:
-        vertices = plpy.execute("""
+        vertices_count = plpy.execute("""
                    SELECT count({vertex_id}) AS cnt FROM {vertex_table}
                    WHERE {vertex_id} = ANY(ARRAY{nodes_of_interest})
                    """.format(**locals()))[0]["cnt"]
-        if vertices != len(nodes_of_interest):
+        if vertices_count != len(nodes_of_interest):
             plpy.error("PageRank: Invalid value for {0}, must be a subset of the vertex_table".format(
                 nodes_of_interest))
 
@@ -593,7 +593,11 @@ def get_query_params_for_ppr(nodes_of_interest, damping_factor,
 
     """
     total_ppr_nodes = 0
-    random_jump_prob_ppr = ''
+    ppr_random_prob_clause = ''
+    if is_platform_pg():
+        distributed_by = ''
+    else:
+        distributed_by = " DISTRIBUTED BY ({vertex_id})".format(vertex_id)
 
     if nodes_of_interest:
         total_ppr_nodes = len(nodes_of_interest)
@@ -604,7 +608,7 @@ def get_query_params_for_ppr(nodes_of_interest, damping_factor,
             CREATE TEMP TABLE {personalized_nodes} AS
             SELECT {vertex_id}, {init_value_ppr_nodes}::DOUBLE PRECISION as pagerank
             FROM {vertex_table} where {vertex_id} =  ANY(ARRAY{nodes_of_interest})
-            {cur_distribution}
+            {distributed_by}
         """.format(**locals()))
         ppr_join_clause = """ LEFT  JOIN {personalized_nodes} on
                 {personalized_nodes}.{vertex_id} = {edge_temp_table}.dest""".format(**locals())
@@ -612,11 +616,11 @@ def get_query_params_for_ppr(nodes_of_interest, damping_factor,
 
         # In case of PPR, Assign the Random jump probability to the nodes_of_interest only.
         # For rest of the nodes, Random jump probability  will be zero.
-        random_jump_prob_ppr = """ CASE when {edge_temp_table}.dest = ANY(ARRAY{nodes_of_interest})
+        ppr_random_prob_clause = """ CASE when {edge_temp_table}.dest = ANY(ARRAY{nodes_of_interest})
                                 THEN {prob_value}
                                 ELSE 0
                                 END """.format(**locals())
-    return(total_ppr_nodes, random_jump_prob_ppr, ppr_join_clause)
+    return(total_ppr_nodes, ppr_random_prob_clause, ppr_join_clause)
 
 
 def pagerank_help(schema_madlib, message, **kwargs):
@@ -641,8 +645,10 @@ def pagerank_help(schema_madlib, message, **kwargs):
     max_iter      INTEGER, -- Maximum iteration number (DEFAULT = 100)
     threshold     DOUBLE PRECISION, -- Stopping criteria (DEFAULT = 1/(N*1000),
                                     -- N is number of vertices in the graph)
-    grouping_col  TEXT -- Comma separated column names to group on
+    grouping_col  TEXT, -- Comma separated column names to group on
                        -- (DEFAULT = NULL, no grouping)
+    nodes_of_interest ARRAY OF INTEGER -- A comma seperated list of vertices
+                                          or nodes for personalized page rank.
 """) + """
 
 A summary table is also created that contains information regarding the
@@ -730,6 +736,26 @@ SELECT madlib.pagerank(
 SELECT * FROM pagerank_out ORDER BY user_id, pagerank DESC;
 -- View the summary table to find the number of iterations required for
 -- convergence for each group.
+SELECT * FROM pagerank_out_summary;
+
+-- Compute the Personalized PageRank:
+DROP TABLE IF EXISTS pagerank_out, pagerank_out_summary;
+SELECT madlib.pagerank(
+                       'vertex',             -- Vertex table
+                       'id',                 -- Vertix id column
+                       'edge',               -- Edge table
+                       'src=src, dest=dest', -- Comma delimted string of edge arguments
+                       'pagerank_out',       -- Output table of PageRank
+                        NULL,                -- Default damping factor (0.85)
+                        NULL,                -- Default max iters (100)
+                        NULL,                -- Default Threshold
+                        NULL,                -- No Grouping
+                       ARRAY[2,4]);          -- Personlized Nodes
+
+-- View the Personalized PageRank of all vertices, sorted by their scores.
+SELECT * FROM pagerank_out ORDER BY pagerank DESC;
+-- View the summary table to find the number of iterations required for
+-- convergence.
 SELECT * FROM pagerank_out_summary;
 """
         else:

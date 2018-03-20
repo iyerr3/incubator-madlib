@@ -66,12 +66,12 @@ SELECT pagerank(
              'id',            -- Vertix id column
              '"EDGE"',          -- "EDGE" table
              'src=src, dest=dest', -- "EDGE" args
-             'pagerank_out',
-              NULL,
-              NULL,
-              NULL,
-              NULL,
-             NULL); -- Output table of PageRank
+             'pagerank_out',    -- Output table of PageRank
+              NULL,             -- Default damping factor (0.85)
+              NULL,             -- Default max iters (100)
+              NULL,             -- Default Threshold 
+              NULL,             -- No Grouping 
+             NULL);             -- Personlized Nodes
 
 -- View the PageRank of all vertices, sorted by their scores.
 SELECT assert(relative_error(SUM(pagerank), 1) < 0.00001,
@@ -86,11 +86,11 @@ SELECT pagerank(
              '"EDGE"',          -- "EDGE" table
              'src=src, dest=dest', -- "EDGE" args
              'pagerank_gr_out', -- Output table of PageRank
-             NULL,
-             NULL,
-             NULL,
-             'user_id',
-             NULL);
+             NULL,              -- Default damping factor (0.85)
+             NULL,              -- Default max iters (100)
+             NULL,              -- Default Threshold 
+             'user_id',         -- No Grouping 
+             NULL);             -- Personlized Nodes
 
 -- View the PageRank of all vertices, sorted by their scores.
 SELECT assert(relative_error(SUM(pagerank), 1) < 0.00001,
