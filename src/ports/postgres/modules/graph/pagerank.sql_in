@@ -124,7 +124,7 @@ a single model is generated for all data.
 <dt> nodes_of_interest (optional) </dt>
 <dd>ARRAY OF INTEGER, default: NULL. A comma seperated list of vertices or nodes
 for personalized page rank. When this parameter is provided, Personalized Page Rank 
-will run and in the absence of this parameter, regular Page Run will run. 
+will run and in the absence of this parameter, regular PageRank will run. 
 </dl>
 
 @anchor examples

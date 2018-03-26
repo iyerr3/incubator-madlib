@@ -89,7 +89,7 @@ SELECT pagerank(
              NULL,              -- Default damping factor (0.85)
              NULL,              -- Default max iters (100)
              NULL,              -- Default Threshold 
-             'user_id',         -- No Grouping 
+             'user_id',         -- Grouping column
              NULL);             -- Personlized Nodes
 
 -- View the PageRank of all vertices, sorted by their scores.
@@ -100,6 +100,49 @@ SELECT assert(relative_error(SUM(pagerank), 1) < 0.00001,
         'PageRank: Scores do not sum up to 1 for group 2.'
     ) FROM pagerank_gr_out WHERE user_id=2;
 
+
+-- Tests for Personalized Page Rank
+
+-- Test without grouping 
+
+DROP TABLE IF EXISTS pagerank_ppr_out;
+DROP TABLE IF EXISTS pagerank_ppr_out_summary;
+SELECT pagerank(
+             'vertex',        -- Vertex table
+             'id',            -- Vertix id column
+             '"EDGE"',          -- "EDGE" table
+             'src=src, dest=dest', -- "EDGE" args
+             'pagerank_ppr_out', -- Output table of PageRank
+             NULL,              -- Default damping factor (0.85)
+             NULL,              -- Default max iters (100)
+             NULL,              -- Default Threshold 
+             NULL,         -- Grouping column
+            '{1,3}');             -- Personlized Nodes
+
+
+-- View the PageRank of all vertices, sorted by their scores.
+SELECT assert(relative_error(SUM(pagerank), 1) < 0.00124,
+        'PageRank: Scores do not sum up to 1.'
+    ) FROM pagerank_ppr_out;
+
+
+-- Test with grouping 
+
+DROP TABLE IF EXISTS pagerank_ppr_grp_out;
+DROP TABLE IF EXISTS pagerank_ppr_grp_out_summary;
+SELECT pagerank(
+             'vertex',        -- Vertex table
+             'id',            -- Vertix id column
+             '"EDGE"',          -- "EDGE" table
+             'src=src, dest=dest', -- "EDGE" args
+             'pagerank_ppr_grp_out', -- Output table of PageRank
+             NULL,              -- Default damping factor (0.85)
+             NULL,              -- Default max iters (100)
+             NULL,              -- Default Threshold 
+             'user_id',         -- Grouping column
+            '{1,3}');             -- Personlized Nodes
+
+SELECT assert(count(*) = 14, 'Tuple count for Pagerank out table != 14') FROM pagerank_ppr_grp_out;
 
 -- These tests have been temporarily removed for GPDB5 alpha support
 
