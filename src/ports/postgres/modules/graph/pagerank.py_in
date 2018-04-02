@@ -52,7 +52,7 @@ from utilities.validate_args import table_exists
 
 def validate_pagerank_args(schema_madlib, vertex_table, vertex_id, edge_table,
                            edge_params, out_table, damping_factor, max_iter,
-                           threshold, grouping_cols_list, nodes_of_interest):
+                           threshold, grouping_cols_list, personalization_vertices):
     """
     Function to validate input parameters for PageRank
     """
@@ -67,39 +67,41 @@ def validate_pagerank_args(schema_madlib, vertex_table, vertex_id, edge_table,
             format(damping_factor))
 
     # Validate against the givin set of nodes for Personalized Page Rank
-    if nodes_of_interest:
-        nodes_of_interest_count = len(nodes_of_interest)
-        vertices_count = plpy.execute("""
-                   SELECT count(DISTINCT({vertex_id})) AS cnt FROM {vertex_table}
-                   WHERE {vertex_id} = ANY(ARRAY{nodes_of_interest})
-                   """.format(**locals()))[0]["cnt"]
-        # Check to see if the given set of nodes exist in vertex table
-        if vertices_count != len(nodes_of_interest):
-            plpy.error("PageRank: Invalid value for {0}, must be a subset of the vertex_table".format(
-                nodes_of_interest))
-        # Validate given set of nodes against each user group.
-        # If all the given nodes are not present in the user group
-        # then throw an error.
+    if personalization_vertices:
+        grouping_column = ''
+        grouping_col = ''
+        grouping_col_group_by = ''
+        order_by = ''
+        vid_group_id = "{vertex_id} as vid ".format(vertex_id=vertex_id)
         if grouping_cols_list:
-            missing_user_grps = ''
-            grp_by_column = get_table_qualified_col_str(
+            grouping_col = get_table_qualified_col_str(
                 edge_table, grouping_cols_list)
-            grps_without_nodes = plpy.execute("""
-                   SELECT {grp_by_column} FROM {edge_table}
-                   WHERE src = ANY(ARRAY{nodes_of_interest}) group by {grp_by_column}
-                   having count(DISTINCT(src)) != {nodes_of_interest_count}
-                   """.format(**locals()))
-            for row in range(grps_without_nodes.nrows()):
-                missing_user_grps += str(grps_without_nodes[row]['user_id'])
-                if row < grps_without_nodes.nrows() - 1:
-                    missing_user_grps += ' ,'
-            if grps_without_nodes.nrows() > 0:
-                plpy.error("Nodes for Personalizaed Page Rank are missing from these groups: {0} ".format(
-                    missing_user_grps))
+            vid_group_id += """ , {grouping_col} as grp """.format(
+                grouping_col=grouping_col)
+            grouping_col_group_by = " , {grouping_col}" .format(
+                grouping_col=grouping_col)
+            order_by = "order by {grouping_col}".format(
+                grouping_col=grouping_col)
+
+        vertices_count = plpy.execute("""
+                        SELECT  {vid_group_id} FROM {vertex_table} inner join
+                        {edge_table} on {vertex_table}.{vertex_id} = {edge_table}.src
+                        WHERE {vertex_table}.{vertex_id} = ANY(ARRAY{personalization_vertices})
+                        GROUP BY {vertex_id} {grouping_col_group_by} {order_by}
+                        """.format(**locals()))
+
+        all_vertices = set()
+        for row in range(vertices_count.nrows()):
+            all_vertices.add(vertices_count[row]["vid"])
+
+        if list(all_vertices) != personalization_vertices:
+            plpy.error(
+                "Nodes for Personalizaed Page Rank must"
+                "be a subset of the vertex_table and should be present in all the groups")
 
 
 def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_table,
-             damping_factor, max_iter, threshold, grouping_cols, nodes_of_interest, **kwargs):
+             damping_factor, max_iter, threshold, grouping_cols, personalization_vertices, **kwargs):
     """
     Function that computes the PageRank
 
@@ -113,7 +115,7 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
         @param damping_factor
         @param max_iter
         @param threshold
-        @param nodes_of_interest
+        @param personalization_vertices
     """
     with MinWarning('warning'):
         params_types = {'src': str, 'dest': str}
@@ -135,7 +137,7 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
         validate_pagerank_args(schema_madlib, vertex_table, vertex_id, edge_table,
                                edge_params, out_table, damping_factor,
                                max_iter, threshold, grouping_cols_list,
-                               nodes_of_interest)
+                               personalization_vertices)
 
         summary_table = add_postfix(out_table, "_summary")
         _assert(not table_exists(summary_table),
@@ -186,7 +188,6 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
         out_cnts = unique_string(desp='out_cnts')
         out_cnts_cnt = unique_string(desp='cnt')
         v1 = unique_string(desp='v1')
-        personalized_nodes = unique_string(desp='personalized_nodes')
 
         if is_platform_pg():
             cur_distribution = cnts_distribution = ''
@@ -201,11 +202,16 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
             """.format(**locals())
 
         # Get query params for Personalized Page Rank.
-        ppr_params = get_query_params_for_ppr(nodes_of_interest, damping_factor,
-                                              vertex_id, edge_temp_table, vertex_table)
-        total_ppr_nodes = ppr_params[0]
-        random_jump_prob_ppr = ppr_params[1]
-        ppr_init_value_clause = ppr_params[2]
+        ppr_params = ''
+        total_ppr_nodes = 0
+        random_jump_prob_ppr = 0
+        ppr_init_value_clause = ''
+        if personalization_vertices:
+            ppr_params = get_query_params_for_ppr(personalization_vertices, damping_factor,
+                                                  vertex_id, edge_temp_table, vertex_table)
+            total_ppr_nodes = ppr_params[0]
+            random_jump_prob_ppr = ppr_params[1]
+            ppr_init_value_clause = ppr_params[2]
 
         random_probability = (1.0 - damping_factor) / n_vertices
         if total_ppr_nodes > 0:
@@ -262,15 +268,15 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
             # Find number of vertices in each group, this is the normalizing factor
             # for computing the random_prob
             where_clause_ppr = ''
-            if nodes_of_interest > 0:
-                where_clause_ppr = """where __vertices__ = ANY(ARRAY{nodes_of_interest})""".format(
+            if personalization_vertices:
+                where_clause_ppr = """where __vertices__ = ANY(ARRAY{personalization_vertices})""".format(
                     **locals())
                 random_prob_grp = 1.0 - damping_factor
-                init_prob_grp = 1.0 / len(nodes_of_interest)
+                init_prob_grp = 1.0 / total_ppr_nodes
             else:
-                random_prob_grp  = """{rand_damp}/COUNT(__vertices__)::DOUBLE PRECISION
+                random_prob_grp = """{rand_damp}/COUNT(__vertices__)::DOUBLE PRECISION
                          """.format(**locals())
-                init_prob_grp  =  """1/COUNT(__vertices__)::DOUBLE PRECISION""".format(
+                init_prob_grp = """1/COUNT(__vertices__)::DOUBLE PRECISION""".format(
                     **locals())
 
             plpy.execute("DROP TABLE IF EXISTS {0}".format(vertices_per_group))
@@ -284,7 +290,8 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                         UNION
                         SELECT {grouping_cols}, {dest} FROM {edge_temp_table}
                     ){subq}
-                    ON {grouping_where_clause} {where_clause_ppr}
+                    ON {grouping_where_clause}
+                    {where_clause_ppr}
                     GROUP BY {group_by_clause}
                 """.format(**locals()))
 
@@ -293,9 +300,9 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
             group_by_clause = get_table_qualified_col_str(
                 vertices_per_group, grouping_cols_list)
 
-            if nodes_of_interest > 0:
-                init_prob_grp_ppr = 1.0 / len(nodes_of_interest)
-                init_pr = """ CASE when __vertices__ = ANY(ARRAY{nodes_of_interest})
+            if personalization_vertices:
+                init_prob_grp_ppr = 1.0 / total_ppr_nodes
+                init_pr = """ CASE when __vertices__ = ANY(ARRAY{personalization_vertices})
                                 THEN {init_prob_grp_ppr}
                                 ELSE 0
                                 END """.format(**locals())
@@ -381,7 +388,7 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
             # Strings required for the main PageRank computation query
             grouping_cols_select_pr = edge_grouping_cols_select + ', '
 
-            if nodes_of_interest:
+            if personalization_vertices:
                 random_jump_prob = random_jump_prob_ppr
             else:
                 random_jump_prob = 'MIN({vpg}.{random_prob})'.format(**locals())
@@ -615,16 +622,16 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                 """.format(**locals()))
 
         # Step 4: Cleanup
-        plpy.execute("""DROP TABLE IF EXISTS {0},{1},{2},{3},{4},{5},{6},{7}
+        plpy.execute("""DROP TABLE IF EXISTS {0},{1},{2},{3},{4},{5},{6}
             """.format(out_cnts, edge_temp_table, cur, message, cur_unconv,
-                       message_unconv, nodes_with_no_incoming_edges, personalized_nodes))
+                       message_unconv, nodes_with_no_incoming_edges))
         if grouping_cols:
             plpy.execute("""DROP TABLE IF EXISTS {0},{1},{2}
                 """.format(vertices_per_group, temp_summary_table,
                            distinct_grp_table))
 
 
-def get_query_params_for_ppr(nodes_of_interest, damping_factor,
+def get_query_params_for_ppr(personalization_vertices, damping_factor,
                              vertex_id, edge_temp_table, vertex_table):
     """
      This function will prepare the Join Clause and the condition to Calculate the Personalized Page Rank
@@ -632,7 +639,7 @@ def get_query_params_for_ppr(nodes_of_interest, damping_factor,
      to existing formula to calculate pagerank.
 
      Args:
-         @param nodes_of_interest
+         @param personalization_vertices
          @param damping_factor
          @param vertex_id
          @param edge_temp_table
@@ -646,18 +653,18 @@ def get_query_params_for_ppr(nodes_of_interest, damping_factor,
     ppr_random_prob_clause = ''
     ppr_init_prob_clause = ''
 
-    if nodes_of_interest:
-        total_ppr_nodes = len(nodes_of_interest)
+    if personalization_vertices:
+        total_ppr_nodes = len(personalization_vertices)
         ppr_init_value = 1.0 / total_ppr_nodes
         prob_value = 1.0 - damping_factor
-        # In case of PPR, Assign the Random jump probability to the nodes_of_interest only.
+        # In case of PPR, Assign the Random jump probability to the personalization_vertices only.
         # For rest of the nodes, Random jump probability  will be zero.
-        ppr_random_prob_clause = """ CASE when {edge_temp_table}.dest = ANY(ARRAY{nodes_of_interest})
+        ppr_random_prob_clause = """ CASE when {edge_temp_table}.dest = ANY(ARRAY{personalization_vertices})
                                 THEN {prob_value}
                                 ELSE 0
                                 END """.format(**locals())
 
-        ppr_init_prob_clause = """ CASE when {vertex_id} = ANY(ARRAY{nodes_of_interest})
+        ppr_init_prob_clause = """ CASE when {vertex_id} = ANY(ARRAY{personalization_vertices})
                                 THEN {ppr_init_value}
                                 ELSE 0
                                 END """.format(**locals())
@@ -688,7 +695,7 @@ def pagerank_help(schema_madlib, message, **kwargs):
                                     -- N is number of vertices in the graph)
     grouping_col  TEXT, -- Comma separated column names to group on
                        -- (DEFAULT = NULL, no grouping)
-    nodes_of_interest ARRAY OF INTEGER -- A comma seperated list of vertices
+   personalization_vertices ARRAY OF INTEGER     -- A comma seperated list of vertices
                                           or nodes for personalized page rank.
 """) + """
 
@@ -787,10 +794,10 @@ SELECT madlib.pagerank(
                        'edge',               -- Edge table
                        'src=src, dest=dest', -- Comma delimted string of edge arguments
                        'pagerank_out',       -- Output table of PageRank
-                        NULL,                -- Default damping factor (0.85)
-                        NULL,                -- Default max iters (100)
-                        NULL,                -- Default Threshold
-                        NULL,                -- No Grouping
+                       NULL,                -- Default damping factor (0.85)
+                       NULL,                -- Default max iters (100)
+                       NULL,                -- Default Threshold
+                       NULL,                -- No Grouping
                        ARRAY[2,4]);          -- Personlized Nodes
 
 -- View the Personalized PageRank of all vertices, sorted by their scores.

@@ -60,7 +60,7 @@ pagerank( vertex_table,
           max_iter,
           threshold,
           grouping_cols, 
-          nodes_of_interest
+          personalization_vertices
         )
 </pre>
 
@@ -121,7 +121,7 @@ distribution per group. When this value is NULL, no grouping is used and
 a single model is generated for all data.
 @note Expressions are not currently supported for 'grouping_cols'.</dd>
 
-<dt> nodes_of_interest (optional) </dt>
+<dt> personalization_vertices (optional) </dt>
 <dd>ARRAY OF INTEGER, default: NULL. A comma seperated list of vertices or nodes
 for personalized page rank. When this parameter is provided, Personalized Page Rank 
 will run and in the absence of this parameter, regular PageRank will run. 
@@ -278,7 +278,7 @@ SELECT * FROM pagerank_out_summary ORDER BY user_id;
 (2 rows)
 </pre>
 
--# Example of Personalized Page Rank with Nodes {2,4}. nodes_of_interest can be passed in ARRAY[2,4] format as well. 
+-# Example of Personalized Page Rank with Nodes {2,4}. personalization_vertices can be passed in ARRAY[2,4] format as well. 
 <pre class="syntax">
 DROP TABLE IF EXISTS pagerank_out, pagerank_out_summary;
 SELECT madlib.pagerank(
@@ -333,7 +333,7 @@ CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.pagerank(
     max_iter        INTEGER,
     threshold       FLOAT8,
     grouping_cols   VARCHAR,
-    nodes_of_interest INTEGER[]
+    personalization_vertices INTEGER[]
 ) RETURNS VOID AS $$
     PythonFunction(graph, pagerank, pagerank)
 $$ LANGUAGE plpythonu VOLATILE
