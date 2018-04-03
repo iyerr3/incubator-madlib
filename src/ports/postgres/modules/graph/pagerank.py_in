@@ -45,6 +45,7 @@ from utilities.utilities import extract_keyvalue_params
 from utilities.utilities import unique_string, split_quoted_delimited_str
 from utilities.utilities import is_platform_pg
 from utilities.utilities import py_list_to_sql_string
+from utilities.utilities import collate_plpy_result
 
 from utilities.validate_args import columns_exist_in_table, get_cols_and_types
 from utilities.validate_args import table_exists
@@ -66,44 +67,39 @@ def validate_pagerank_args(schema_madlib, vertex_table, vertex_id, edge_table,
             "PageRank: Invalid damping factor value ({0}), must be between 0 and 1.".
             format(damping_factor))
 
-    # Validate against the givin set of nodes for Personalized Page Rank
     if personalization_vertices:
-        grouping_column = ''
-        grouping_col = ''
-        grouping_col_group_by = ''
-        order_by = ''
-        vid_group_id = "{vertex_id} as vid ".format(vertex_id=vertex_id)
+        # For personalization, ensure each group (or the whole table) contains
+        # of personalization vertex.
         if grouping_cols_list:
-            grouping_col = get_table_qualified_col_str(
-                edge_table, grouping_cols_list)
-            vid_group_id += """ , {grouping_col} as grp """.format(
-                grouping_col=grouping_col)
-            grouping_col_group_by = " , {grouping_col}" .format(
-                grouping_col=grouping_col)
-            order_by = "order by {grouping_col}".format(
-                grouping_col=grouping_col)
+            grouping_cols = get_table_qualified_col_str(edge_table, grouping_cols_list)
+            group_by_str = "GROUP BY {0}" .format(grouping_cols)
+            comma_group_alias = " , {0} AS grp ".format(grouping_cols)
+        else:
+            group_by_str = ''
+            comma_group_alias = ''
 
         vertices_count = plpy.execute("""
-                        SELECT  {vid_group_id} FROM {vertex_table} inner join
-                        {edge_table} on {vertex_table}.{vertex_id} = {edge_table}.src
-                        WHERE {vertex_table}.{vertex_id} = ANY(ARRAY{personalization_vertices})
-                        GROUP BY {vertex_id} {grouping_col_group_by} {order_by}
-                        """.format(**locals()))
+            SELECT count(distinct src) as n_pers_vertices
+                   {comma_group_alias}
+            FROM {edge_table}
+            WHERE {edge_table}.src IN ({p_vertices_str})
+            {group_by_str}
+            """.format(p_vertices_str=','.join(map(str, personalization_vertices)),
+                       **locals()))
 
-        all_vertices = set()
-        for row in range(vertices_count.nrows()):
-            all_vertices.add(vertices_count[row]["vid"])
+        total_ppr_nodes = len(personalization_vertices)
+        n_pers_vertices_each_group = collate_plpy_result(vertices_count)['n_pers_vertices']
+        _assert(all([n_vertices == total_ppr_nodes
+                     for n_vertices in n_pers_vertices_each_group]),
+                "Vertices for Personalized Page Rank must "
+                "be present in edge table and should be present "
+                "in each group.")
 
-        if list(all_vertices) != personalization_vertices:
-            plpy.error(
-                "Nodes for Personalizaed Page Rank must"
-                "be a subset of the vertex_table and should be present in all the groups")
 
-
-def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_table,
-             damping_factor, max_iter, threshold, grouping_cols, personalization_vertices, **kwargs):
-    """
-    Function that computes the PageRank
+def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args,
+             out_table, damping_factor, max_iter, threshold, grouping_cols,
+             personalization_vertices, **kwargs):
+    """ Compute PageRank metric for all vertices
 
     Args:
         @param vertex_table
@@ -120,35 +116,31 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
     with MinWarning('warning'):
         params_types = {'src': str, 'dest': str}
         default_args = {'src': 'src', 'dest': 'dest'}
-        edge_params = extract_keyvalue_params(
-            edge_args, params_types, default_args)
+        edge_params = extract_keyvalue_params(edge_args, params_types, default_args)
 
         # populate default values for optional params if null
-        if damping_factor is None:
-            damping_factor = 0.85
-        if max_iter is None:
-            max_iter = 100
-        if not vertex_id:
-            vertex_id = "id"
-        if not grouping_cols:
-            grouping_cols = ''
+        damping_factor = 0.85 if damping_factor is None else damping_factor
+        max_iter = 100 if max_iter is None else max_iter
+        vertex_id = "id" if not vertex_id else vertex_id
+        grouping_cols = '' if not grouping_cols else grouping_cols
 
         grouping_cols_list = split_quoted_delimited_str(grouping_cols)
-        validate_pagerank_args(schema_madlib, vertex_table, vertex_id, edge_table,
-                               edge_params, out_table, damping_factor,
-                               max_iter, threshold, grouping_cols_list,
-                               personalization_vertices)
+
+        validate_pagerank_args(schema_madlib, vertex_table, vertex_id,
+                               edge_table, edge_params, out_table,
+                               damping_factor, max_iter, threshold,
+                               grouping_cols_list, personalization_vertices)
 
         summary_table = add_postfix(out_table, "_summary")
         _assert(not table_exists(summary_table),
-                "Graph PageRank: Output summary table ({summary_table}) already exists."
-                .format(**locals()))
+                "Graph PageRank: Output summary table ({0}) already exists.".
+                format(summary_table))
         src = edge_params["src"]
         dest = edge_params["dest"]
         n_vertices = plpy.execute("""
-                    SELECT COUNT({0}) AS cnt
-                    FROM {1}
-                """.format(vertex_id, vertex_table))[0]["cnt"]
+            SELECT COUNT({0}) AS n_vertices
+            FROM {1}
+            """.format(vertex_id, vertex_table))[0]["n_vertices"]
 
         if threshold is None:
             threshold = get_default_threshold_for_link_analysis(n_vertices)
@@ -164,21 +156,21 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
 
         edge_temp_table = unique_string(desp='temp_edge')
         grouping_cols_comma = grouping_cols + ',' if grouping_cols else ''
-        distribution = ('' if is_platform_pg() else
-                        "DISTRIBUTED BY ({0}{1})".format(
-            grouping_cols_comma, dest))
+        distributed_by_str = ("" if is_platform_pg() else
+                              "DISTRIBUTED BY ({0} {1})".
+                              format(grouping_cols_comma, dest))
         plpy.execute("DROP TABLE IF EXISTS {0}".format(edge_temp_table))
         plpy.execute("""
             CREATE TEMP TABLE {edge_temp_table} AS
                 SELECT * FROM {edge_table}
-                {distribution}
+                {distributed_by_str}
             """.format(**locals()))
 
         # GPDB and HAWQ have distributed by clauses to help them with indexing.
         # For Postgres we add the index explicitly.
         if is_platform_pg():
-            plpy.execute("CREATE INDEX ON {0}({1})".format(
-                edge_temp_table, src))
+            plpy.execute("CREATE INDEX ON {0}({1})".
+                         format(edge_temp_table, src))
 
         # Intermediate tables required.
         cur = unique_string(desp='cur')
@@ -194,24 +186,26 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
         else:
             cur_distribution = cnts_distribution = "DISTRIBUTED BY ({0}{1})".format(
                 grouping_cols_comma, vertex_id)
-        cur_join_clause = """{edge_temp_table}.{dest} = {cur}.{vertex_id}
-            """.format(**locals())
-        out_cnts_join_clause = """{out_cnts}.{vertex_id} =
-            {edge_temp_table}.{src} """.format(**locals())
-        v1_join_clause = """{v1}.{vertex_id} = {edge_temp_table}.{src}
-            """.format(**locals())
+        cur_join_clause = ("{edge_temp_table}.{dest} = {cur}.{vertex_id}".
+                           format(**locals()))
+        out_cnts_join_clause = ("{out_cnts}.{vertex_id} = {edge_temp_table}.{src}".
+                                format(**locals()))
+        v1_join_clause = ("{v1}.{vertex_id} = {edge_temp_table}.{src}".
+                          format(**locals()))
 
         # Get query params for Personalized Page Rank.
-        ppr_params = ''
-        total_ppr_nodes = 0
-        random_jump_prob_ppr = 0
-        ppr_init_value_clause = ''
         if personalization_vertices:
-            ppr_params = get_query_params_for_ppr(personalization_vertices, damping_factor,
-                                                  vertex_id, edge_temp_table, vertex_table)
-            total_ppr_nodes = ppr_params[0]
-            random_jump_prob_ppr = ppr_params[1]
-            ppr_init_value_clause = ppr_params[2]
+            total_ppr_nodes = len(personalization_vertices)
+            random_jump_prob_ppr, ppr_init_value_clause = \
+                get_query_params_for_ppr(personalization_vertices,
+                                         damping_factor,
+                                         vertex_id,
+                                         edge_temp_table,
+                                         vertex_table)
+        else:
+            total_ppr_nodes = 0
+            random_jump_prob_ppr = 0
+            ppr_init_value_clause = ''
 
         random_probability = (1.0 - damping_factor) / n_vertices
         if total_ppr_nodes > 0:
@@ -253,8 +247,10 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
         if grouping_cols:
             distinct_grp_table = unique_string(desp='grp')
             plpy.execute("DROP TABLE IF EXISTS {0}".format(distinct_grp_table))
-            plpy.execute("""CREATE TEMP TABLE {distinct_grp_table} AS
-                    SELECT DISTINCT {grouping_cols} FROM {edge_temp_table}
+            plpy.execute("""
+                CREATE TEMP TABLE {distinct_grp_table} AS
+                SELECT DISTINCT {grouping_cols}
+                FROM {edge_temp_table}
                 """.format(**locals()))
             vertices_per_group = unique_string(desp='nvert_grp')
             init_pr = unique_string(desp='init')
@@ -265,32 +261,34 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                 distinct_grp_table, subq, grouping_cols_list)
             group_by_clause = get_table_qualified_col_str(
                 distinct_grp_table, grouping_cols_list)
-            # Find number of vertices in each group, this is the normalizing factor
-            # for computing the random_prob
+            # Find number of vertices in each group, this is the normalizing
+            # factor for computing the random_prob
             where_clause_ppr = ''
             if personalization_vertices:
-                where_clause_ppr = """where __vertices__ = ANY(ARRAY{personalization_vertices})""".format(
-                    **locals())
+                where_clause_ppr = ("WHERE __vertices__ IN ({0})".
+                                    format(','.join(map(str, personalization_vertices))))
                 random_prob_grp = 1.0 - damping_factor
                 init_prob_grp = 1.0 / total_ppr_nodes
             else:
-                random_prob_grp = """{rand_damp}/COUNT(__vertices__)::DOUBLE PRECISION
-                         """.format(**locals())
-                init_prob_grp = """1/COUNT(__vertices__)::DOUBLE PRECISION""".format(
-                    **locals())
+                random_prob_grp = ("{0}/COUNT(__vertices__)::DOUBLE PRECISION".
+                                   format(rand_damp))
+                init_prob_grp = "1.0/COUNT(__vertices__)"
 
             plpy.execute("DROP TABLE IF EXISTS {0}".format(vertices_per_group))
-            plpy.execute("""CREATE TEMP TABLE {vertices_per_group} AS
+            plpy.execute("""
+                CREATE TEMP TABLE {vertices_per_group} AS
                     SELECT {distinct_grp_table}.*,
-                    {init_prob_grp} AS {init_pr},
-                    {random_prob_grp} as {random_prob}
-                    FROM {distinct_grp_table} INNER JOIN (
-                        SELECT {grouping_cols}, {src} AS __vertices__
-                        FROM {edge_temp_table}
-                        UNION
-                        SELECT {grouping_cols}, {dest} FROM {edge_temp_table}
-                    ){subq}
-                    ON {grouping_where_clause}
+                           {init_prob_grp} AS {init_pr},
+                           {random_prob_grp} AS {random_prob}
+                    FROM {distinct_grp_table}
+                         INNER JOIN (
+                            SELECT {grouping_cols}, {src} AS __vertices__
+                            FROM {edge_temp_table}
+                            UNION
+                            SELECT {grouping_cols}, {dest}
+                            FROM {edge_temp_table}
+                            ){subq}
+                         ON {grouping_where_clause}
                     {where_clause_ppr}
                     GROUP BY {group_by_clause}
                 """.format(**locals()))
@@ -301,23 +299,28 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                 vertices_per_group, grouping_cols_list)
 
             if personalization_vertices:
-                init_prob_grp_ppr = 1.0 / total_ppr_nodes
-                init_pr = """ CASE when __vertices__ = ANY(ARRAY{personalization_vertices})
-                                THEN {init_prob_grp_ppr}
-                                ELSE 0
-                                END """.format(**locals())
+                init_pr = """
+                    CASE WHEN __vertices__ IN ({pers_vertices})
+                         THEN {init_prob}
+                         ELSE 0
+                    END
+                    """.format(pers_vertices=','.join(map(str, personalization_vertices)),
+                               init_prob=1.0/total_ppr_nodes)
 
             plpy.execute("""
                     CREATE TEMP TABLE {cur} AS
-                    SELECT {group_by_clause}, {subq}.__vertices__
-                            AS {vertex_id}, {init_pr} AS pagerank
-                    FROM {vertices_per_group} INNER JOIN (
-                        SELECT {grouping_cols}, {src} AS __vertices__
-                        FROM {edge_temp_table}
-                        UNION
-                        SELECT {grouping_cols}, {dest} FROM {edge_temp_table}
-                    ){subq}
-                    ON {grouping_where_clause}
+                    SELECT {group_by_clause},
+                           {subq}.__vertices__ AS {vertex_id},
+                           {init_pr} AS pagerank
+                    FROM {vertices_per_group}
+                         INNER JOIN (
+                            SELECT {grouping_cols}, {src} AS __vertices__
+                            FROM {edge_temp_table}
+                            UNION
+                            SELECT {grouping_cols}, {dest}
+                            FROM {edge_temp_table}
+                            ){subq}
+                         ON {grouping_where_clause}
                     {cur_distribution}
                 """.format(**locals()))
             vpg = unique_string(desp='vpg')
@@ -418,27 +421,29 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                 cur, summary_table, grouping_cols_list)
             limit = ''
 
-            # Find all nodes, in each group, that have no incoming edges. The PageRank
-            # value of these nodes are not updated using the first query in the
-            # following for loop. They must be explicitly plugged back in to the
-            # message table, with their corresponding group's random_prob as their
-            # PageRank values.
+            # Find all nodes, in each group, that have no incoming edges. The
+            # PageRank value of these nodes are not updated using the first
+            # query in the following for loop. They must be explicitly plugged
+            # back in to the message table, with their corresponding group's
+            # random_prob as their PageRank values.
             plpy.execute("""
-                    CREATE TABLE {nodes_with_no_incoming_edges} AS
-                    SELECT {select_group_cols}, __t1__.{src} AS {vertex_id},
-                            {vpg}.{random_prob} AS pagerank
-                    FROM {edge_temp_table} AS __t1__ {vpg_from_clause_ins}
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM {edge_temp_table} AS __t2__
-                        WHERE __t1__.{src}=__t2__.{dest} AND {where_group_clause}
-                    ) {vpg_where_clause_ins}
+                CREATE TABLE {nodes_with_no_incoming_edges} AS
+                SELECT {select_group_cols},
+                        __t1__.{src} AS {vertex_id},
+                       {vpg}.{random_prob} AS pagerank
+                FROM {edge_temp_table} AS __t1__ {vpg_from_clause_ins}
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM {edge_temp_table} AS __t2__
+                    WHERE __t1__.{src} = __t2__.{dest} AND
+                    {where_group_clause}
+                ) {vpg_where_clause_ins}
                 """.format(
-                select_group_cols=get_table_qualified_col_str(
-                    '__t1__', grouping_cols_list),
-                where_group_clause=_check_groups(
-                    '__t1__', '__t2__', grouping_cols_list),
-                **locals()))
+                    select_group_cols=get_table_qualified_col_str(
+                        '__t1__', grouping_cols_list),
+                    where_group_clause=_check_groups(
+                        '__t1__', '__t2__', grouping_cols_list),
+                    **locals()))
         else:
             # cur and out_cnts tables can be simpler when no grouping is
             # involved.
@@ -448,36 +453,38 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                 init_value = 1.0 / n_vertices
             plpy.execute("""
                     CREATE TEMP TABLE {cur} AS
-                    SELECT {vertex_id}, {init_value}::DOUBLE PRECISION AS pagerank
+                    SELECT {vertex_id},
+                           {init_value}::DOUBLE PRECISION AS pagerank
                     FROM {vertex_table}
                     {cur_distribution}
                 """.format(**locals()))
 
             # Compute the out-degree of every node in the graph.
             plpy.execute("DROP TABLE IF EXISTS {0}".format(out_cnts))
-            plpy.execute("""CREATE TEMP TABLE {out_cnts} AS
-                SELECT {src} AS {vertex_id}, COUNT({dest}) AS {out_cnts_cnt}
-                FROM {edge_temp_table}
-                GROUP BY {src}
-                {cnts_distribution}
+            plpy.execute("""
+                CREATE TEMP TABLE {out_cnts} AS
+                    SELECT {src} AS {vertex_id},
+                           COUNT({dest}) AS {out_cnts_cnt}
+                    FROM {edge_temp_table}
+                    GROUP BY {src}
+                    {cnts_distribution}
                 """.format(**locals()))
             # The summary table when there is no grouping will contain only
             # the iteration column. We don't need to create the out_table
             # when no grouping is used since the 'cur' table will be renamed
             # to out_table after pagerank computation is completed.
-            plpy.execute("""
-                    CREATE TABLE {summary_table} (
-                        __iterations__ INTEGER
-                    )
-                """.format(**locals()))
+            plpy.execute("CREATE TABLE {0} (__iterations__ INTEGER) ".
+                         format(summary_table))
             # Find all nodes in the graph that don't have any incoming edges and
             # assign random_prob as their pagerank values.
             plpy.execute("""
                     CREATE TABLE {nodes_with_no_incoming_edges} AS
-                    SELECT DISTINCT({src}), {random_probability} AS pagerank
+                    SELECT DISTINCT({src}),
+                           {random_probability} AS pagerank
                     FROM {edge_temp_table}
-                    EXCEPT
-                        (SELECT DISTINCT({dest}), {random_probability} AS pagerank
+                    EXCEPT (
+                        SELECT DISTINCT({dest}),
+                               {random_probability} AS pagerank
                         FROM {edge_temp_table})
                 """.format(**locals()))
         unconverged = 0
@@ -508,7 +515,7 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                     SELECT {grouping_cols_select_pr}
                             {edge_temp_table}.{dest} AS {vertex_id},
                             SUM(({v1}.pagerank)/{out_cnts}.{out_cnts_cnt})*{damping_factor}+
-                            {random_jump_prob} AS  pagerank
+                            {random_jump_prob} AS pagerank
                     FROM {edge_temp_table}
                         INNER JOIN {cur} ON {cur_join_clause}
                         INNER JOIN {out_cnts} ON {out_cnts_join_clause}
@@ -558,8 +565,7 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                     """.format(message_unconv))[0]["cnt"]
                 if iteration_num > 0 and grouping_cols:
                     # Update result and summary tables for groups that have
-                    # converged
-                    # since the last iteration.
+                    # converged since the last iteration.
                     update_output_grouping_tables_for_link_analysis(temp_summary_table,
                                                                     iteration_num,
                                                                     summary_table,
@@ -581,21 +587,20 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
             if unconverged == 0:
                 break
 
-        # updating the calculated pagerank value in case of
-        # Personalized Page Rank.
+        # updating the calculated pagerank value in case of Personalized Page Rank.
         # Ref :
         # https://docs.oracle.com/cd/E56133_01/latest/reference/algorithms/pagerank.html
         if total_ppr_nodes > 1:
-            plpy.execute("""UPDATE {table_name} set pagerank = pagerank / {total_ppr_nodes}"""
-                         .format(table_name=cur, total_ppr_nodes=total_ppr_nodes))
-        # If there still are some unconverged groups/(entire table),
+            plpy.execute("UPDATE {table_name} set pagerank = pagerank / {total_ppr_nodes}".
+                         format(table_name=cur, total_ppr_nodes=total_ppr_nodes))
+        # If there still are some unconverged groups/entire table,
         # update results.
         if grouping_cols:
             if unconverged > 0:
                 if threshold != 0:
-                    # We completed max_iters, but there are still some unconverged
-                    # groups # Update the result and summary tables for unconverged
-                    # groups.
+                    # We completed max_iters, but there are still some
+                    # unconverged groups. Update the result and summary tables
+                    # for unconverged groups.
                     update_output_grouping_tables_for_link_analysis(temp_summary_table,
                                                                     iteration_num,
                                                                     summary_table,
@@ -612,31 +617,25 @@ def pagerank(schema_madlib, vertex_table, vertex_id, edge_table, edge_args, out_
                                                                     grouping_cols_list,
                                                                     distinct_grp_table)
         else:
-            plpy.execute("""
-                ALTER TABLE {table_name}
-                RENAME TO {out_table}
-                """.format(table_name=cur, **locals()))
-            plpy.execute("""
-                INSERT INTO {summary_table} VALUES
-                ({iteration_num}+1)
-                """.format(**locals()))
+            plpy.execute("ALTER TABLE {table_name} RENAME TO {out_table} ".
+                         format(table_name=cur, out_table=out_table))
+            plpy.execute("INSERT INTO {summary_table} VALUES ({i} + 1)".
+                         format(summary_table=summary_table, i=iteration_num))
 
         # Step 4: Cleanup
-        plpy.execute("""DROP TABLE IF EXISTS {0},{1},{2},{3},{4},{5},{6}
-            """.format(out_cnts, edge_temp_table, cur, message, cur_unconv,
-                       message_unconv, nodes_with_no_incoming_edges))
+        plpy.execute("DROP TABLE IF EXISTS {0},{1},{2},{3},{4},{5},{6}".
+                     format(out_cnts, edge_temp_table, cur, message, cur_unconv,
+                            message_unconv, nodes_with_no_incoming_edges))
         if grouping_cols:
-            plpy.execute("""DROP TABLE IF EXISTS {0},{1},{2}
-                """.format(vertices_per_group, temp_summary_table,
-                           distinct_grp_table))
+            plpy.execute("DROP TABLE IF EXISTS {0},{1},{2} ".
+                         format(vertices_per_group, temp_summary_table,
+                                distinct_grp_table))
 
 
 def get_query_params_for_ppr(personalization_vertices, damping_factor,
                              vertex_id, edge_temp_table, vertex_table):
-    """
-     This function will prepare the Join Clause and the condition to Calculate the Personalized Page Rank
-     and Returns Total number of user provided nodes of interest, A join Clause and a clause to be added
-     to existing formula to calculate pagerank.
+    """ Prepare the Join Clause and the condition to calculate the
+        Personalized Page Rank
 
      Args:
          @param personalization_vertices
@@ -645,30 +644,34 @@ def get_query_params_for_ppr(personalization_vertices, damping_factor,
          @param edge_temp_table
          @param vertex_table
 
-     Returns :
-             (Integer, String, String)
+     Returns:
+        (Integer, String, String)
 
+        Total number of user provided nodes of interest,
+        a join clause and
+        a clause to be added to existing formula to calculate pagerank.
     """
-    total_ppr_nodes = 0
-    ppr_random_prob_clause = ''
-    ppr_init_prob_clause = ''
+    ppr_init_value = 1.0 / len(personalization_vertices)
+    prob_value = 1.0 - damping_factor
+    pers_vertices_str = ', '.join(map(str, personalization_vertices))
 
-    if personalization_vertices:
-        total_ppr_nodes = len(personalization_vertices)
-        ppr_init_value = 1.0 / total_ppr_nodes
-        prob_value = 1.0 - damping_factor
-        # In case of PPR, Assign the Random jump probability to the personalization_vertices only.
-        # For rest of the nodes, Random jump probability  will be zero.
-        ppr_random_prob_clause = """ CASE when {edge_temp_table}.dest = ANY(ARRAY{personalization_vertices})
-                                THEN {prob_value}
-                                ELSE 0
-                                END """.format(**locals())
+    # In case of PPR, assign the random jump probability to the
+    # personalization_vertices only.
+    # For rest of the nodes, Random jump probability  will be zero.
+    ppr_random_prob_clause = """
+        CASE WHEN {edge_temp_table}.dest IN ({pers_vertices_str})
+             THEN {prob_value}
+             ELSE 0
+        END
+        """.format(**locals())
 
-        ppr_init_prob_clause = """ CASE when {vertex_id} = ANY(ARRAY{personalization_vertices})
-                                THEN {ppr_init_value}
-                                ELSE 0
-                                END """.format(**locals())
-    return(total_ppr_nodes, ppr_random_prob_clause, ppr_init_prob_clause)
+    ppr_init_prob_clause = """
+        CASE WHEN {vertex_id} IN ({pers_vertices_str})
+             THEN {ppr_init_value}
+             ELSE 0
+        END
+        """.format(**locals())
+    return (ppr_random_prob_clause, ppr_init_prob_clause)
 
 
 def pagerank_help(schema_madlib, message, **kwargs):
