@@ -7,6 +7,7 @@ from distutils.util import strtobool
 
 from validate_args import _get_table_schema_names
 from validate_args import get_first_schema
+from validate_args import get_cols
 from validate_args import cols_in_tbl_valid
 from validate_args import does_exclude_reserved
 from validate_args import explicit_bool_to_text
@@ -41,8 +42,8 @@ def get_seg_number():
             SELECT count(*) from gp_segment_configuration
             WHERE role = 'p' and content != -1
             """)[0]['count']
-        ## in case some weird gpdb configuration happens, always returns
-        ## primary segment number >= 1
+        # in case some weird gpdb configuration happens, always returns
+        # primary segment number >= 1
         return max(1, count)
 # ------------------------------------------------------------------------------
 
@@ -215,11 +216,12 @@ def is_psql_char_type(arg, exclude_list=[]):
     :return: True if it is one of the character types, else False.
 
     """
-    if not isinstance(exclude_list, list) :
+    if not isinstance(exclude_list, list):
         exclude_list = [exclude_list]
 
     text_types = set(['text', 'varchar', 'character varying', 'char', 'character'])
     return arg in text_types - set(exclude_list)
+
 
 def is_psql_boolean_type(arg):
         """
@@ -229,6 +231,7 @@ def is_psql_boolean_type(arg):
         """
         return arg == 'boolean'
 
+
 def is_string_formatted_as_array_expression(string_to_match):
     """
     Return true if the string is formatted as array[<something>], else false
@@ -236,6 +239,7 @@ def is_string_formatted_as_array_expression(string_to_match):
     """
     matched = re.match(r"(?i)^array\[(.*)\]", string_to_match)
     return matched
+
 
 def _string_to_array(s):
     """
@@ -781,8 +785,8 @@ def get_grouping_col_str(schema_madlib, module_name, reserved_cols,
         cols_in_tbl_valid(source_table, grouping_col_array, module_name)
         does_exclude_reserved(grouping_col_array, reserved_cols)
         grp_array_w_cast = explicit_bool_to_text(source_table,
-                                                grouping_col_array,
-                                                schema_madlib)
+                                                 grouping_col_array,
+                                                 schema_madlib)
         grouping_str = ', '.join(i + "::text" for i in grp_array_w_cast)
     else:
         grouping_str = "Null"
@@ -852,6 +856,34 @@ def validate_module_input_params(source_table, output_table, independent_varname
                                            grouping_cols=grouping_cols,
                                            source_table=source_table))
 # ------------------------------------------------------------------------
+
+
+def create_table_drop_cols(source_table, out_table,
+                           cols_to_drop, **kwargs):
+    """ Create copy of table while dropping some of the columns
+    Args:
+        @param source_table str. Name of the source table
+        @param out_table str. Name of the output table
+        @param cols_to_drop str. Comma-separated list of columns to drop
+    """
+    input_tbl_valid(source_table, 'Utilities')
+    output_tbl_valid(out_table, 'Utilities')
+
+    source_table_cols = get_cols(source_table)
+    cols_to_drop_list = split_quoted_delimited_str(cols_to_drop)
+    cols_to_retain = [c for c in source_table_cols
+                      if c not in cols_to_drop_list]
+    _assert(cols_to_retain,
+            "Utilities error: No valid columns in the output table")
+    plpy.execute("""
+        CREATE TABLE {out_table} AS
+        SELECT {cols}
+        FROM {source_table}
+        """.format(cols=', '.join(cols_to_retain),
+                   out_table=out_table,
+                   source_table=source_table))
+# ------------------------------------------------------------------------------
+
 
 import unittest
 

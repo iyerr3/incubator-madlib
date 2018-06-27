@@ -72,6 +72,26 @@ while implementing new algorithms.
     <td>Drop all tables matching pattern '%madlib_temp%' in a given schema.</td>
   </tr>
 
+  <tr>
+    <th>dropcols(source_table, out_table, cols_to_drop)</th>
+    <td>Create a new table with a subset of the columns dropped from a source table.
+        <table>
+        <tr><td>
+            source_table TEXT. Name of the table containing the source data.
+        </td></tr>
+        <tr><td>
+            out_table TEXT. Name of the generated table containing the output.
+            If a table with the same name already exists, an error will be returned.
+        </td></tr>
+        <tr><td>
+            cols_to_drop TEXT, default NULL. Comma-separated string of column
+            names from the source table to drop.
+            An error is returned if the output table does not contain any columns.
+        </td></tr>
+        </table>
+    </td>
+  </tr>
+
 </table>
 
 Note: If the function cleanup_madlib_temp_tables() gives an Out-of-memory error,
@@ -409,7 +429,7 @@ $$m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `CONTAINS SQL', `');
 /**
  * @brief Cast any value to text.
  *
- * @param val	A value with any specific type.
+ * @param val   A value with any specific type.
  *
  * @return The text format string for the value.
  *
@@ -474,3 +494,18 @@ CREATE AGGREGATE MADLIB_SCHEMA.mode(double precision) (
   FINALFUNC=MADLIB_SCHEMA._final_mode, --Function to call after everything has been added to array
   INITCOND='{}' --Initialize an empty array when starting
 );
+
+
+------------------------------------------------------------------------
+/**
+ * @brief Takes a string of comma separated values and puts it into an array
+ */
+CREATE OR REPLACE FUNCTION MADLIB_SCHEMA.dropcols (
+  source_table      VARCHAR,
+  out_table         VARCHAR,
+  cols_to_drop      VARCHAR
+)
+RETURNS void AS $$
+PythonFunction(utilities, utilities, create_table_drop_cols)
+$$ LANGUAGE plpythonu VOLATILE
+m4_ifdef(`__HAS_FUNCTION_PROPERTIES__', `CONTAINS SQL', `');
